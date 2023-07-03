@@ -1,8 +1,9 @@
+import logging
 from importlib import import_module
 
 import dpclean
-from dflow import (InputArtifact, InputParameter, Step, Steps, Workflow,
-                   upload_artifact)
+from dflow import (InputArtifact, InputParameter, S3Artifact, Step, Steps,
+                   Workflow, upload_artifact)
 from dflow.plugins.dispatcher import DispatcherExecutor
 from dflow.python import PythonOPTemplate
 from dpclean.op import SplitDataset
@@ -114,7 +115,11 @@ def build_workflow(config):
     train_params = train["params"]
 
     wf = Workflow("clean-data")
-    dataset_artifact = upload_artifact(dataset)
+    if isinstance(dataset, str) and dataset.startswith("oss://"):
+        dataset_artifact = S3Artifact(key=dataset[6:])
+    else:
+        dataset_artifact = upload_artifact(dataset)
+        logging.info("Dataset uploaded to %s" % dataset_artifact.key)
     split_step = Step(
         "split-dataset",
         template=PythonOPTemplate(split_op, image=split_image,
@@ -131,9 +136,21 @@ def build_workflow(config):
                                      train_image_pull_policy, select_executor,
                                      train_executor)
 
-    model_artifact = upload_artifact(model)
-    init_data_artifact = upload_artifact(init_data)
-    valid_data_artifact = upload_artifact(valid_data)
+    if isinstance(model, str) and model.startswith("oss://"):
+        model_artifact = S3Artifact(key=model[6:])
+    else:
+        model_artifact = upload_artifact(model)
+        logging.info("Model uploaded to %s" % model_artifact.key)
+    if isinstance(init_data, str) and init_data.startswith("oss://"):
+        init_data_artifact = S3Artifact(key=init_data[6:])
+    else:
+        init_data_artifact = upload_artifact(init_data)
+        logging.info("Init data uploaded to %s" % init_data_artifact.key)
+    if isinstance(valid_data, str) and valid_data.startswith("oss://"):
+        valid_data_artifact = S3Artifact(key=valid_data[6:])
+    else:
+        valid_data_artifact = upload_artifact(valid_data)
+        logging.info("Validation data uploaded to %s" % valid_data_artifact.key)
     loop_step = Step(
         "active-learning-loop",
         template=active_learning,
