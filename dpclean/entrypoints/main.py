@@ -1,8 +1,15 @@
 import argparse
 import json
+import logging
+import os
 from typing import List, Optional
 
 from dpclean.flow import build_workflow
+
+
+log_level = os.environ.get('LOG_LEVEL', 'INFO')
+if log_level:
+    logging.basicConfig(level=getattr(logging, log_level.upper(), logging.INFO))
 
 
 def main_parser():
