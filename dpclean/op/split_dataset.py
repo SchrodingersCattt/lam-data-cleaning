@@ -20,6 +20,7 @@ class SplitDataset(OP):
         return OPIOSign(
             {
                 "systems": Artifact(List[Path]),
+                "n_total": int,
             }
         )
 
@@ -39,4 +40,5 @@ class SplitDataset(OP):
 
         return OPIO({
             "systems": systems,
+            "n_total": len(systems),
         })

@@ -2,8 +2,8 @@ import logging
 from importlib import import_module
 
 import dpclean
-from dflow import (InputArtifact, InputParameter, S3Artifact, Step, Steps,
-                   Workflow, upload_artifact)
+from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
+                   Step, Steps, Workflow, if_expression, upload_artifact)
 from dflow.plugins.dispatcher import DispatcherExecutor
 from dflow.python import PythonOPTemplate
 from dpclean.op import SplitDataset
@@ -12,44 +12,50 @@ from dpclean.op import SplitDataset
 class ActiveLearning(Steps):
     def __init__(self, select_op, train_op, select_image, train_image,
                  select_image_pull_policy=None, train_image_pull_policy=None,
-                 select_executor=None, train_executor=None):
+                 select_executor=None, train_executor=None, resume=True):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
         self.inputs.parameters["max_selected"] = InputParameter(type=int)
         self.inputs.parameters["threshold"] = InputParameter(type=float)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
+        self.inputs.parameters["learning_curve"] = InputParameter(type=list)
         self.inputs.artifacts["candidate_systems"] = InputArtifact()
         self.inputs.artifacts["current_systems"] = InputArtifact()
         self.inputs.artifacts["valid_systems"] = InputArtifact()
+        self.inputs.artifacts["finetune_model"] = InputArtifact()
         self.inputs.artifacts["model"] = InputArtifact()
-
-        select_step = Step(
-            "select-samples",
-            template=PythonOPTemplate(select_op, image=select_image,
-                                      python_packages=dpclean.__path__),
-            parameters={"max_selected": self.inputs.parameters["max_selected"],
-                        "threshold": self.inputs.parameters["threshold"]},
-            artifacts={"systems": self.inputs.artifacts["candidate_systems"],
-                       "model": self.inputs.artifacts["model"]},
-            executor=select_executor,
-            key="iter-%s-select" % self.inputs.parameters["iter"],
-        )
-        self.add(select_step)
+        self.outputs.parameters["learning_curve"] = OutputParameter(type=list)
 
         train_step = Step(
             "train",
             template=PythonOPTemplate(train_op, image=train_image,
+                                      image_pull_policy=train_image_pull_policy,
                                       python_packages=dpclean.__path__),
             parameters={"train_params": self.inputs.parameters["train_params"]},
-            artifacts={"current_systems": self.inputs.artifacts["current_systems"],
-                       "added_systems": select_step.outputs.artifacts["selected_systems"],
+            artifacts={"train_systems": self.inputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
-                       "model": self.inputs.artifacts["model"]},
-            when="%s > 0" % select_step.outputs.parameters["n_selected"],
+                       "finetune_model": self.inputs.artifacts["finetune_model"],
+                       "model": self.inputs.artifacts["model"] if resume else None},
             executor=train_executor,
             key="iter-%s-train" % self.inputs.parameters["iter"],
         )
         self.add(train_step)
+
+        select_step = Step(
+            "select-samples",
+            template=PythonOPTemplate(select_op, image=select_image,
+                                      image_pull_policy=select_image_pull_policy,
+                                      python_packages=dpclean.__path__),
+            parameters={"max_selected": self.inputs.parameters["max_selected"],
+                        "threshold": self.inputs.parameters["threshold"],
+                        "learning_curve": self.inputs.parameters["learning_curve"]},
+            artifacts={"current_systems": self.inputs.artifacts["current_systems"],
+                       "candidate_systems": self.inputs.artifacts["candidate_systems"],
+                       "model": train_step.outputs.artifacts["model"]},
+            executor=select_executor,
+            key="iter-%s-select" % self.inputs.parameters["iter"],
+        )
+        self.add(select_step)
 
         next_step = Step(
             "next-loop",
@@ -57,15 +63,21 @@ class ActiveLearning(Steps):
             parameters={"iter": self.inputs.parameters["iter"] + 1,
                         "max_selected": self.inputs.parameters["max_selected"],
                         "threshold": self.inputs.parameters["threshold"],
-                        "train_params": self.inputs.parameters["train_params"]},
+                        "train_params": self.inputs.parameters["train_params"],
+                        "learning_curve": select_step.outputs.parameters["learning_curve"]},
             artifacts={"candidate_systems": select_step.outputs.artifacts["remaining_systems"],
-                       "current_systems": train_step.outputs.artifacts["current_systems"],
+                       "current_systems": select_step.outputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
+                       "finetune_model": self.inputs.artifacts["finetune_model"],
                        "model": train_step.outputs.artifacts["model"]},
             when="%s > 0" % select_step.outputs.parameters["n_selected"],
         )
         self.add(next_step)
 
+        self.outputs.parameters["learning_curve"].value_from_expression = if_expression(
+            _if=select_step.outputs.parameters["n_selected"] > 0,
+            _then=next_step.outputs.parameters["learning_curve"],
+            _else=select_step.outputs.parameters["learning_curve"])
 
 def import_func(s : str):
     fields = s.split(".")
@@ -81,7 +93,8 @@ def build_workflow(config):
     dataset = config["dataset"]
     init_data = config.get("init_data", [])
     valid_data = config["valid_data"]
-    model = config["model"]
+    finetune_model = config.get("finetune_model", None)
+    resume = config.get("resume", True)
     split = config.get("split", {})
     select = config["select"]
     train = config["train"]
@@ -135,14 +148,16 @@ def build_workflow(config):
     active_learning = ActiveLearning(select_op, train_op, select_image,
                                      train_image, select_image_pull_policy,
                                      train_image_pull_policy, select_executor,
-                                     train_executor)
+                                     train_executor, resume)
 
-    if isinstance(model, str) and model.startswith("oss://"):
-        model_artifact = S3Artifact(key=model[6:])
+    if finetune_model is None:
+        finetune_model_artifact = None
+    elif isinstance(finetune_model, str) and finetune_model.startswith("oss://"):
+        finetune_model_artifact = S3Artifact(key=finetune_model[6:])
     else:
-        model_artifact = upload_artifact(model)
-        if hasattr(model_artifact, "key"):
-            logging.info("Model uploaded to %s" % model_artifact.key)
+        finetune_model_artifact = upload_artifact(finetune_model)
+        if hasattr(finetune_model_artifact, "key"):
+            logging.info("Finetune model uploaded to %s" % finetune_model_artifact.key)
     if isinstance(init_data, str) and init_data.startswith("oss://"):
         init_data_artifact = S3Artifact(key=init_data[6:])
     else:
@@ -160,11 +175,12 @@ def build_workflow(config):
         template=active_learning,
         parameters={"max_selected": max_selected,
                     "threshold": threshold,
-                    "train_params": train_params},
+                    "train_params": train_params,
+                    "learning_curve": []},
         artifacts={"current_systems": init_data_artifact,
                    "candidate_systems": split_step.outputs.artifacts["systems"],
                    "valid_systems": valid_data_artifact,
-                   "model": model_artifact},
-    )
+                   "finetune_model": finetune_model_artifact,
+                   "model": None})
     wf.add(loop_step)
     return wf

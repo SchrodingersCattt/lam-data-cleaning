@@ -11,10 +11,10 @@ class RunTrain(OP, ABC):
     def get_input_sign(cls):
         return OPIOSign(
             {
-                "current_systems": Artifact(List[Path]),
-                "added_systems": Artifact(List[Path]),
+                "train_systems": Artifact(List[Path]),
                 "valid_systems": Artifact(List[Path]),
-                "model": Artifact(Path),
+                "finetune_model": Artifact(Path, optional=True),
+                "model": Artifact(Path, optional=True),
                 "train_params": dict,
             }
         )
@@ -23,7 +23,6 @@ class RunTrain(OP, ABC):
     def get_output_sign(cls):
         return OPIOSign(
             {
-                "current_systems": Artifact(List[Path]),
                 "model": Artifact(Path),
                 "output_dir": Artifact(Path),
             }

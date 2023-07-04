@@ -13,10 +13,12 @@ class SelectSamples(OP, ABC):
     def get_input_sign(cls):
         return OPIOSign(
             {
-                "systems": Artifact(List[Path]),
+                "current_systems": Artifact(List[Path]),
+                "candidate_systems": Artifact(List[Path]),
                 "model": Artifact(Path),
                 "max_selected": int,
                 "threshold": float,
+                "learning_curve": list,
             }
         )
 
@@ -26,9 +28,14 @@ class SelectSamples(OP, ABC):
             {
                 "selected_systems": Artifact(List[Path]),
                 "remaining_systems": Artifact(List[Path]),
+                "current_systems": Artifact(List[Path]),
                 "n_selected": int,
                 "n_remaining": int,
                 "converged": bool,
+                "rmse_f": float,
+                "min_f": float,
+                "max_f": float,
+                "learning_curve": list,
             }
         )
 
@@ -46,19 +53,24 @@ class SelectSamples(OP, ABC):
 
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
-        rmse_f = []
         self.load_model(ip["model"])
 
-        if len(ip["systems"]) == 0:
+        if len(ip["candidate_systems"]) == 0:
             return OPIO({
                 "selected_systems": [],
                 "remaining_systems": [],
+                "current_systems": ip["current_systems"],
                 "n_selected": 0,
                 "n_remaining": 0,
                 "converged": False,
+                "rmse_f": np.nan,
+                "min_f": np.nan,
+                "max_f": np.nan,
+                "learning_curve": ip["learning_curve"],
             })
 
-        for sys in ip["systems"]:
+        rmse_f = []
+        for sys in ip["candidate_systems"]:
             k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
             cell = k[0].data["cells"][0]
             coord = k[0].data["coords"][0]
@@ -75,20 +87,26 @@ class SelectSamples(OP, ABC):
             rmse_f.append(err_f)
 
         f_max = max(rmse_f)
-        f_ave = np.mean(rmse_f)
+        f_ave = np.sqrt(np.mean(np.square(rmse_f)))
         f_min = min(rmse_f)
 
         logging.info('max force (eV/A): ', f_max)
         logging.info('ave force (eV/A): ', f_ave)
         logging.info('min force (eV/A): ', f_min)
+        ip["learning_curve"].append([len(ip["current_systems"]), float(f_ave)])
 
         if f_max - f_ave <= ip["threshold"] * f_ave:
             return OPIO({
                 "selected_systems": [],
-                "remaining_systems": ip["systems"],
+                "remaining_systems": ip["candidate_systems"],
+                "current_systems": ip["current_systems"],
                 "n_selected": 0,
-                "n_remaining": len(ip["systems"]),
+                "n_remaining": len(ip["candidate_systems"]),
                 "converged": True,
+                "rmse_f": float(f_ave),
+                "min_f": float(f_min),
+                "max_f": float(f_max),
+                "learning_curve": ip["learning_curve"],
             })
 
         sorted_indices = np.argsort(rmse_f)
@@ -96,14 +114,19 @@ class SelectSamples(OP, ABC):
         remaining_systems = []
         for i in range(len(sorted_indices)):
             if i < ip["max_selected"]:
-                selected_systems.append(ip["systems"][sorted_indices[i]])
+                selected_systems.append(ip["candidate_systems"][sorted_indices[i]])
             else:
-                remaining_systems.append(ip["systems"][sorted_indices[i]])
+                remaining_systems.append(ip["candidate_systems"][sorted_indices[i]])
 
         return OPIO({
                 "selected_systems": selected_systems,
                 "remaining_systems": remaining_systems,
+                "current_systems": ip["current_systems"] + selected_systems,
                 "n_selected": len(selected_systems),
                 "n_remaining": len(remaining_systems),
                 "converged": False,
+                "rmse_f": float(f_ave),
+                "min_f": float(f_min),
+                "max_f": float(f_max),
+                "learning_curve": ip["learning_curve"],
             })
