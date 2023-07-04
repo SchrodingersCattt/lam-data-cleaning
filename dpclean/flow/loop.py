@@ -140,13 +140,28 @@ def build_workflow(config):
         dataset_artifact = upload_artifact(dataset)
         if hasattr(dataset_artifact, "key"):
             logging.info("Dataset uploaded to %s" % dataset_artifact.key)
+    if init_data is None:
+        init_data_artifact = None
+    elif isinstance(init_data, str) and init_data.startswith("oss://"):
+        init_data_artifact = S3Artifact(key=init_data[6:])
+    else:
+        if isinstance(init_data, str):
+            init_data = [init_data]
+        path_list = []
+        for ds in init_data:
+            for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
+                path_list.append(os.path.dirname(f))
+        init_data_artifact = upload_artifact(path_list)
+        if hasattr(init_data_artifact, "key"):
+            logging.info("Initial data uploaded to %s" % init_data_artifact.key)
     split_step = Step(
         "split-dataset",
         template=PythonOPTemplate(split_op, image=split_image,
                                   image_pull_policy=split_image_pull_policy,
                                   python_packages=dpclean.__path__),
         parameters={"n_init": max_selected if init_data is None else 0},
-        artifacts={"dataset": dataset_artifact},
+        artifacts={"dataset": dataset_artifact,
+                   "init_systems": init_data_artifact},
         executor=split_executor,
         key="split-dataset"
     )
@@ -165,20 +180,6 @@ def build_workflow(config):
         finetune_model_artifact = upload_artifact(finetune_model)
         if hasattr(finetune_model_artifact, "key"):
             logging.info("Finetune model uploaded to %s" % finetune_model_artifact.key)
-    if init_data is None:
-        init_data_artifact = split_step.outputs.artifacts["init_systems"]
-    elif isinstance(init_data, str) and init_data.startswith("oss://"):
-        init_data_artifact = S3Artifact(key=init_data[6:])
-    else:
-        if isinstance(init_data, str):
-            init_data = [init_data]
-        path_list = []
-        for ds in init_data:
-            for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
-                path_list.append(os.path.dirname(f))
-        init_data_artifact = upload_artifact(path_list)
-        if hasattr(init_data_artifact, "key"):
-            logging.info("Initial data uploaded to %s" % init_data_artifact.key)
     if isinstance(valid_data, str) and valid_data.startswith("oss://"):
         valid_data_artifact = S3Artifact(key=valid_data[6:])
     else:
@@ -198,7 +199,7 @@ def build_workflow(config):
                     "threshold": threshold,
                     "train_params": train_params,
                     "learning_curve": []},
-        artifacts={"current_systems": init_data_artifact,
+        artifacts={"current_systems": split_step.outputs.artifacts["init_systems"],
                    "candidate_systems": split_step.outputs.artifacts["systems"],
                    "valid_systems": valid_data_artifact,
                    "finetune_model": finetune_model_artifact,
