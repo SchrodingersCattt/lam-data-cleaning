@@ -52,19 +52,20 @@ class SelectSamples(OP, ABC):
         rmse_f = []
         for sys in systems:
             k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
-            cell = k[0].data["cells"][0]
-            coord = k[0].data["coords"][0]
-            force0 = k[0].data["forces"][0]
-            atype = k[0].data["atom_types"]
-            e, f, v = self.evaluate(coord, cell, atype)
+            for i in range(len(k)):
+                cell = k[i].data["cells"][0]
+                coord = k[i].data["coords"][0]
+                force0 = k[i].data["forces"][0]
+                atype = k[i].data["atom_types"]
+                e, f, v = self.evaluate(coord, cell, atype)
 
-            lx = 0
-            for i in range(force0.shape[0]):
-                lx += (force0[i][0] - f[i][0]) ** 2 + \
-                        (force0[i][1] - f[i][1]) ** 2 + \
-                        (force0[i][2] - f[i][2]) ** 2
-            err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
-            rmse_f.append(err_f)
+                lx = 0
+                for i in range(force0.shape[0]):
+                    lx += (force0[i][0] - f[i][0]) ** 2 + \
+                            (force0[i][1] - f[i][1]) ** 2 + \
+                            (force0[i][2] - f[i][2]) ** 2
+                err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
+                rmse_f.append(err_f)
         return rmse_f
 
     @OP.exec_sign_check
