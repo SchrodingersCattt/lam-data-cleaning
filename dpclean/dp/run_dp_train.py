@@ -11,7 +11,7 @@ class RunDPTrain(RunTrain):
     def execute(self, ip: OPIO) -> OPIO:
         params = ip["train_params"]
         params["training"]["training_data"]["systems"] = [
-            str(s) for s in ip["train_systems"]]
+            str(s) for s in ip["train_systems"] if s is not None]
         params["training"]["validation_data"]["systems"] = [
             str(s) for s in ip["valid_systems"]]
 
