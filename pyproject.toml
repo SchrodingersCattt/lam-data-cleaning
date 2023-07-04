@@ -15,7 +15,7 @@ classifiers = [
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
 ]
 dependencies = [
-    'pydflow',
+    'pydflow>=1.7.14',
     'dpdata',
 ]
 requires-python = ">=3.8"
