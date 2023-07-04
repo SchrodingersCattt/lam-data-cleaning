@@ -15,5 +15,7 @@ class DPSelectSamples(SelectSamples):
                  cell: np.ndarray,
                  atype: List[int]
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        coord = coord.reshape([1, -1])
+        cell = cell.reshape([1, -1])
         e, f, v = self.dp.eval(coord, cell, atype)
-        return e, f, v
+        return e[0], f[0], v[0]

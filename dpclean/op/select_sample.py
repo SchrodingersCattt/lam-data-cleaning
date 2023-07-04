@@ -60,27 +60,18 @@ class SelectSamples(OP, ABC):
 
         for sys in ip["systems"]:
             k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
-            cell0 = k[0].data["cells"]
-            [a0, b0, c0] = cell0.shape
-            cell = cell0.reshape(b0, c0).reshape([1, -1])
-
-            coord0 = k[0].data["coords"]
-            [a1, b1, c1] = coord0.shape
-            coord = coord0.reshape(b1, c1).reshape([1, -1])
-
-
-            force0 = k[0].data["forces"]
-            [a2, b2, c2] = force0.shape
-
+            cell = k[0].data["cells"][0]
+            coord = k[0].data["coords"][0]
+            force0 = k[0].data["forces"][0]
             atype = k[0].data["atom_types"]
             e, f, v = self.evaluate(coord, cell, atype)
 
             lx = 0
-            for i in range(b2):
-                lx += (force0[0][i][0] - f[0][i][0]) ** 2 + \
-                        (force0[0][i][1] - f[0][i][1]) ** 2 + \
-                        (force0[0][i][2] - f[0][i][2]) ** 2
-            err_f = ( lx / b2 / 3 ) ** 0.5
+            for i in range(force0.shape[0]):
+                lx += (force0[i][0] - f[i][0]) ** 2 + \
+                        (force0[i][1] - f[i][1]) ** 2 + \
+                        (force0[i][2] - f[i][2]) ** 2
+            err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
             rmse_f.append(err_f)
 
         f_max = max(rmse_f)
