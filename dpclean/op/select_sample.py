@@ -84,7 +84,10 @@ class SelectSamples(OP, ABC):
                 k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
                 n_current += len(k)
         ip["learning_curve"].append([n_current, float(rmse_f)])
-        if len(ip["candidate_systems"]) == 0:
+
+        rmse_f = self.validate(ip["candidate_systems"])
+        nf = sum([len(i) for i in rmse_f])
+        if nf == 0:
             return OPIO({
                 "remaining_systems": [],
                 "current_systems": ip["current_systems"],
@@ -93,9 +96,6 @@ class SelectSamples(OP, ABC):
                 "converged": False,
                 "learning_curve": ip["learning_curve"],
             })
-
-        rmse_f = self.validate(ip["candidate_systems"])
-        nf = sum([len(i) for i in rmse_f])
         f_max = max([max(i) for i in rmse_f if len(i) > 0])
         f_avg = np.sqrt(sum([sum([j**2 for j in i]) for i in rmse_f]) / nf)
         f_min = min([min(i) for i in rmse_f if len(i) > 0])
@@ -107,7 +107,7 @@ class SelectSamples(OP, ABC):
                 "remaining_systems": ip["candidate_systems"],
                 "current_systems": ip["current_systems"],
                 "n_selected": 0,
-                "n_remaining": len(ip["candidate_systems"]),
+                "n_remaining": nf,
                 "converged": True,
                 "learning_curve": ip["learning_curve"],
             })
