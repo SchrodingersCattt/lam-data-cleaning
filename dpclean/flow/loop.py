@@ -119,7 +119,8 @@ def build_workflow(config):
         dataset_artifact = S3Artifact(key=dataset[6:])
     else:
         dataset_artifact = upload_artifact(dataset)
-        logging.info("Dataset uploaded to %s" % dataset_artifact.key)
+        if hasattr(dataset_artifact, "key"):
+            logging.info("Dataset uploaded to %s" % dataset_artifact.key)
     split_step = Step(
         "split-dataset",
         template=PythonOPTemplate(split_op, image=split_image,
@@ -140,17 +141,20 @@ def build_workflow(config):
         model_artifact = S3Artifact(key=model[6:])
     else:
         model_artifact = upload_artifact(model)
-        logging.info("Model uploaded to %s" % model_artifact.key)
+        if hasattr(model_artifact, "key"):
+            logging.info("Model uploaded to %s" % model_artifact.key)
     if isinstance(init_data, str) and init_data.startswith("oss://"):
         init_data_artifact = S3Artifact(key=init_data[6:])
     else:
         init_data_artifact = upload_artifact(init_data)
-        logging.info("Init data uploaded to %s" % init_data_artifact.key)
+        if hasattr(init_data_artifact, "key"):
+            logging.info("Init data uploaded to %s" % init_data_artifact.key)
     if isinstance(valid_data, str) and valid_data.startswith("oss://"):
         valid_data_artifact = S3Artifact(key=valid_data[6:])
     else:
         valid_data_artifact = upload_artifact(valid_data)
-        logging.info("Validation data uploaded to %s" % valid_data_artifact.key)
+        if hasattr(valid_data_artifact, "key"):
+            logging.info("Validation data uploaded to %s" % valid_data_artifact.key)
     loop_step = Step(
         "active-learning-loop",
         template=active_learning,

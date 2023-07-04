@@ -1,0 +1,247 @@
+{
+    "dataset": "./pre/rest_train",
+    "init_data": [
+        "./m0-train-dpa1/train/64"
+    ],
+    "valid_data": [
+        "./m0-train-dpa1/valid/64"
+    ],
+    "model": "./model_OC2M_toy.pt",
+    "split": {
+        "image_pull_policy": "IfNotPresent"
+    },
+    "select": {
+        "op": "dpclean.dp_pt.DPPTSelectSamples",
+        "image": "registry.dp.tech/dplc/deepmd-pytorch:latest",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "ali",
+                        "scass_type": "c8_m31_1 * NVIDIA T4"
+                    }
+                }
+            }
+        },
+        "max_selected": 5,
+        "threshold": 0.0000000020
+    },
+    "train": {
+        "op": "dpclean.dp_pt.RunDPPTTrain",
+        "image": "registry.dp.tech/dplc/deepmd-pytorch:latest",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "ali",
+                        "scass_type": "c8_m31_1 * NVIDIA T4"
+                    }
+                }
+            }
+        },
+        "params": {
+            "model": {
+                "descriptor": {
+                    "type": "se_atten",
+                    "sel": 120,
+                    "rcut_smth": 0.5,
+                    "rcut": 6.0,
+                    "neuron": [
+                        25,
+                        50,
+                        100
+                    ],
+                    "resnet_dt": false,
+                    "axis_neuron": 16,
+                    "seed": 1,
+                    "attn": 128,
+                    "attn_layer": 2,
+                    "attn_dotr": true,
+                    "attn_mask": false,
+                    "post_ln": true,
+                    "ffn": false,
+                    "ffn_embed_dim": 1024,
+                    "activation": "tanh",
+                    "scaling_factor": 1.0,
+                    "head_num": 1,
+                    "normalize": true,
+                    "temperature": 1.0
+                },
+                "fitting_net": {
+                    "neuron": [
+                        240,
+                        240,
+                        240
+                    ],
+                    "resnet_dt": true,
+                    "seed": 1
+                },
+                "type_map": [
+                    "H",
+                    "He",
+                    "Li",
+                    "Be",
+                    "B",
+                    "C",
+                    "N",
+                    "O",
+                    "F",
+                    "Ne",
+                    "Na",
+                    "Mg",
+                    "Al",
+                    "Si",
+                    "P",
+                    "S",
+                    "Cl",
+                    "Ar",
+                    "K",
+                    "Ca",
+                    "Sc",
+                    "Ti",
+                    "V",
+                    "Cr",
+                    "Mn",
+                    "Fe",
+                    "Co",
+                    "Ni",
+                    "Cu",
+                    "Zn",
+                    "Ga",
+                    "Ge",
+                    "As",
+                    "Se",
+                    "Br",
+                    "Kr",
+                    "Rb",
+                    "Sr",
+                    "Y",
+                    "Zr",
+                    "Nb",
+                    "Mo",
+                    "Tc",
+                    "Ru",
+                    "Rh",
+                    "Pd",
+                    "Ag",
+                    "Cd",
+                    "In",
+                    "Sn",
+                    "Sb",
+                    "Te",
+                    "I",
+                    "Xe",
+                    "Cs",
+                    "Ba",
+                    "La",
+                    "Ce",
+                    "Pr",
+                    "Nd",
+                    "Pm",
+                    "Sm",
+                    "Eu",
+                    "Gd",
+                    "Tb",
+                    "Dy",
+                    "Ho",
+                    "Er",
+                    "Tm",
+                    "Yb",
+                    "Lu",
+                    "Hf",
+                    "Ta",
+                    "W",
+                    "Re",
+                    "Os",
+                    "Ir",
+                    "Pt",
+                    "Au",
+                    "Hg",
+                    "Tl",
+                    "Pb",
+                    "Bi",
+                    "Po",
+                    "At",
+                    "Rn",
+                    "Fr",
+                    "Ra",
+                    "Ac",
+                    "Th",
+                    "Pa",
+                    "U",
+                    "Np",
+                    "Pu",
+                    "Am",
+                    "Cm",
+                    "Bk",
+                    "Cf",
+                    "Es",
+                    "Fm",
+                    "Md",
+                    "No",
+                    "Lr",
+                    "Rf",
+                    "Db",
+                    "Sg",
+                    "Bh",
+                    "Hs",
+                    "Mt",
+                    "Ds",
+                    "Rg",
+                    "Cn",
+                    "Nh",
+                    "Fl",
+                    "Mc",
+                    "Lv",
+                    "Ts",
+                    "Og"
+                ]
+            },
+            "learning_rate": {
+                "type": "exp",
+                "start_lr": 0.001,
+                "decay_steps": 5000,
+                "stop_lr": 3.51e-08
+            },
+            "loss": {
+                "start_pref_e": 0.02,
+                "limit_pref_e": 1,
+                "start_pref_f": 1000,
+                "limit_pref_f": 1,
+                "start_pref_v": 0,
+                "limit_pref_v": 0
+            },
+            "training": {
+                "training_data": {
+                    "systems": [
+                        "train/64"
+                    ],
+                    "batch_size": 1
+                },
+                "validation_data": {
+                    "systems": [
+                        "valid/64"
+                    ],
+                    "batch_size": 1,
+                    "numb_btch": 4,
+                    "_comment": "that's all"
+                },
+                "numb_steps": 200,
+                "seed": 1,
+                "disp_file": "lcurve.out",
+                "disp_freq": 100,
+                "save_freq": 100
+            }
+        }        
+    }
+}
