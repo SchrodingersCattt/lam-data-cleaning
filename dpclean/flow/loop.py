@@ -1,6 +1,9 @@
+import glob
 import logging
+import os
 from importlib import import_module
 
+import dflow
 import dpclean
 from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
                    Step, Steps, Workflow, if_expression, upload_artifact)
@@ -51,6 +54,7 @@ class ActiveLearning(Steps):
                         "learning_curve": self.inputs.parameters["learning_curve"]},
             artifacts={"current_systems": self.inputs.artifacts["current_systems"],
                        "candidate_systems": self.inputs.artifacts["candidate_systems"],
+                       "valid_systems": self.inputs.artifacts["valid_systems"],
                        "model": train_step.outputs.artifacts["model"]},
             executor=select_executor,
             key="iter-%s-select" % self.inputs.parameters["iter"],
@@ -90,8 +94,10 @@ def import_func(s : str):
 
 
 def build_workflow(config):
+    dflow.config["detect_empty_dir"] = False
+    wf_name = config.get("name", "clean-data")
     dataset = config["dataset"]
-    init_data = config.get("init_data", [])
+    init_data = config.get("init_data", None)
     valid_data = config["valid_data"]
     finetune_model = config.get("finetune_model", None)
     resume = config.get("resume", True)
@@ -127,7 +133,7 @@ def build_workflow(config):
         train_executor = DispatcherExecutor(**train_executor)
     train_params = train["params"]
 
-    wf = Workflow("clean-data")
+    wf = Workflow(wf_name)
     if isinstance(dataset, str) and dataset.startswith("oss://"):
         dataset_artifact = S3Artifact(key=dataset[6:])
     else:
@@ -139,6 +145,7 @@ def build_workflow(config):
         template=PythonOPTemplate(split_op, image=split_image,
                                   image_pull_policy=split_image_pull_policy,
                                   python_packages=dpclean.__path__),
+        parameters={"n_init": max_selected if init_data is None else 0},
         artifacts={"dataset": dataset_artifact},
         executor=split_executor,
         key="split-dataset"
@@ -158,16 +165,30 @@ def build_workflow(config):
         finetune_model_artifact = upload_artifact(finetune_model)
         if hasattr(finetune_model_artifact, "key"):
             logging.info("Finetune model uploaded to %s" % finetune_model_artifact.key)
-    if isinstance(init_data, str) and init_data.startswith("oss://"):
+    if init_data is None:
+        init_data_artifact = split_step.outputs.artifacts["init_systems"]
+    elif isinstance(init_data, str) and init_data.startswith("oss://"):
         init_data_artifact = S3Artifact(key=init_data[6:])
     else:
-        init_data_artifact = upload_artifact(init_data)
+        if isinstance(init_data, str):
+            init_data = [init_data]
+        path_list = []
+        for ds in init_data:
+            for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
+                path_list.append(os.path.dirname(f))
+        init_data_artifact = upload_artifact(path_list)
         if hasattr(init_data_artifact, "key"):
-            logging.info("Init data uploaded to %s" % init_data_artifact.key)
+            logging.info("Initial data uploaded to %s" % init_data_artifact.key)
     if isinstance(valid_data, str) and valid_data.startswith("oss://"):
         valid_data_artifact = S3Artifact(key=valid_data[6:])
     else:
-        valid_data_artifact = upload_artifact(valid_data)
+        if isinstance(valid_data, str):
+            valid_data = [valid_data]
+        path_list = []
+        for ds in valid_data:
+            for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
+                path_list.append(os.path.dirname(f))
+        valid_data_artifact = upload_artifact(path_list)
         if hasattr(valid_data_artifact, "key"):
             logging.info("Validation data uploaded to %s" % valid_data_artifact.key)
     loop_step = Step(

@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import logging
 from pathlib import Path
 from typing import List, Tuple
 
@@ -15,6 +14,7 @@ class SelectSamples(OP, ABC):
             {
                 "current_systems": Artifact(List[Path]),
                 "candidate_systems": Artifact(List[Path]),
+                "valid_systems": Artifact(List[Path]),
                 "model": Artifact(Path),
                 "max_selected": int,
                 "threshold": float,
@@ -32,9 +32,6 @@ class SelectSamples(OP, ABC):
                 "n_selected": int,
                 "n_remaining": int,
                 "converged": bool,
-                "rmse_f": float,
-                "min_f": float,
-                "max_f": float,
                 "learning_curve": list,
             }
         )
@@ -51,26 +48,9 @@ class SelectSamples(OP, ABC):
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
-    @OP.exec_sign_check
-    def execute(self, ip: OPIO) -> OPIO:
-        self.load_model(ip["model"])
-
-        if len(ip["candidate_systems"]) == 0:
-            return OPIO({
-                "selected_systems": [],
-                "remaining_systems": [],
-                "current_systems": ip["current_systems"],
-                "n_selected": 0,
-                "n_remaining": 0,
-                "converged": False,
-                "rmse_f": np.nan,
-                "min_f": np.nan,
-                "max_f": np.nan,
-                "learning_curve": ip["learning_curve"],
-            })
-
+    def validate(self, systems):
         rmse_f = []
-        for sys in ip["candidate_systems"]:
+        for sys in systems:
             k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
             cell = k[0].data["cells"][0]
             coord = k[0].data["coords"][0]
@@ -85,16 +65,32 @@ class SelectSamples(OP, ABC):
                         (force0[i][2] - f[i][2]) ** 2
             err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
             rmse_f.append(err_f)
+        return rmse_f
 
+    @OP.exec_sign_check
+    def execute(self, ip: OPIO) -> OPIO:
+        self.load_model(ip["model"])
+        rmse_f = self.validate(ip["valid_systems"])
+        rmse_f = np.sqrt(np.mean(np.square(rmse_f)))
+        ip["learning_curve"].append([len(ip["current_systems"]), float(rmse_f)])
+        if len(ip["candidate_systems"]) == 0:
+            return OPIO({
+                "selected_systems": [],
+                "remaining_systems": [],
+                "current_systems": ip["current_systems"],
+                "n_selected": 0,
+                "n_remaining": 0,
+                "converged": False,
+                "learning_curve": ip["learning_curve"],
+            })
+
+        rmse_f = self.validate(ip["candidate_systems"])
         f_max = max(rmse_f)
         f_ave = np.sqrt(np.mean(np.square(rmse_f)))
         f_min = min(rmse_f)
-
-        logging.info('max force (eV/A): ', f_max)
-        logging.info('ave force (eV/A): ', f_ave)
-        logging.info('min force (eV/A): ', f_min)
-        ip["learning_curve"].append([len(ip["current_systems"]), float(f_ave)])
-
+        print('max force (eV/A): ', f_max)
+        print('ave force (eV/A): ', f_ave)
+        print('min force (eV/A): ', f_min)
         if f_max - f_ave <= ip["threshold"] * f_ave:
             return OPIO({
                 "selected_systems": [],
@@ -103,9 +99,6 @@ class SelectSamples(OP, ABC):
                 "n_selected": 0,
                 "n_remaining": len(ip["candidate_systems"]),
                 "converged": True,
-                "rmse_f": float(f_ave),
-                "min_f": float(f_min),
-                "max_f": float(f_max),
                 "learning_curve": ip["learning_curve"],
             })
 
@@ -125,8 +118,5 @@ class SelectSamples(OP, ABC):
                 "n_selected": len(selected_systems),
                 "n_remaining": len(remaining_systems),
                 "converged": False,
-                "rmse_f": float(f_ave),
-                "min_f": float(f_min),
-                "max_f": float(f_max),
                 "learning_curve": ip["learning_curve"],
             })
