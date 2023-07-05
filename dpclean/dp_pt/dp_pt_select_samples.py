@@ -53,6 +53,7 @@ class DPPTSelectSamples(SelectSamples):
         state_dict = torch.load(model)
         model_params = state_dict['_extra_state']['model_params']
         model_params["resuming"] = model
+        self.type_split = model_params["descriptor"]["type"] in ["se_e2_a"]
         self.model = get_model(model_params).to(DEVICE)
         self.wrapper = ModelWrapper(self.model)  # inference only
         if JIT:
@@ -69,7 +70,7 @@ class DPPTSelectSamples(SelectSamples):
         coord = torch.from_numpy(coord.astype(np.float64))
         cell = torch.from_numpy(cell.astype(np.float64))
         atype = torch.from_numpy(atype)
-        model_pred = infer_model(self.model, coord, cell, atype)
+        model_pred = infer_model(self.model, coord, cell, atype, self.type_split)
         e = model_pred["energy"].cpu().detach().numpy()
         f = model_pred["force"].cpu().detach().numpy()
         v = model_pred["virial"].cpu().detach().numpy()
