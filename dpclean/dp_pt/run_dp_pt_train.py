@@ -15,6 +15,9 @@ class RunDPPTTrain(RunTrain):
         params["training"]["validation_data"]["systems"] = [
             str(s) for s in ip["valid_systems"]]
 
+        train_dir = Path("train")
+        train_dir.mkdir(exist_ok=True)
+        os.chdir("train")
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
 
@@ -24,10 +27,12 @@ class RunDPPTTrain(RunTrain):
             cmd = 'dp_pt train --finetune %s input.json' % ip["finetune_model"]
         else:
             cmd = 'dp_pt train input.json'
+        print("Run command '%s'" % cmd)
         ret = os.system(cmd)
-        assert ret == 0, "Command %s failed" % cmd
+        assert ret == 0, "Command '%s' failed" % cmd
+        os.chdir("..")
 
         return OPIO({
-            "model": Path("model.pt"),
-            "output_dir": Path("."),
+            "model": train_dir / "model.pt",
+            "output_dir": train_dir,
         })
