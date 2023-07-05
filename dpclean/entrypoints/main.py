@@ -4,6 +4,7 @@ import logging
 import os
 from typing import List, Optional
 
+from dflow import Workflow
 from dpclean.flow import build_workflow
 
 
@@ -26,6 +27,14 @@ def main_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser_submit.add_argument("CONFIG", help="the config file.")
+
+    parser_submit = subparsers.add_parser(
+        "resubmit",
+        help="Resubmit a data-cleaning workflow",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_submit.add_argument("CONFIG", help="the config file.")
+    parser_submit.add_argument("ID", help="the workflow ID.")
     return parser
 
 
@@ -52,6 +61,13 @@ def main():
             config = json.load(f)
         wf = build_workflow(config)
         wf.submit()
+    elif args.command == "resubmit":
+        wf0 = Workflow(id=args.ID)
+        reused_steps = [step for step in wf0.query_step() if step.key is not None and step.phase == "Succeeded"]
+        with open(args.CONFIG, "r") as f:
+            config = json.load(f)
+        wf = build_workflow(config)
+        wf.submit(reuse_step=reused_steps)
 
 
 if __name__ == "__main__":
