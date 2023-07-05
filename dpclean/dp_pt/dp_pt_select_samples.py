@@ -66,8 +66,8 @@ class DPPTSelectSamples(SelectSamples):
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         import torch
 
-        coord = torch.from_numpy(coord)
-        cell = torch.from_numpy(cell)
+        coord = torch.from_numpy(coord.astype(np.float64))
+        cell = torch.from_numpy(cell.astype(np.float64))
         atype = torch.from_numpy(atype)
         model_pred = infer_model(self.model, coord, cell, atype)
         e = model_pred["energy"].cpu().detach().numpy()
