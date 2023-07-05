@@ -49,16 +49,22 @@ class SelectSamples(OP, ABC):
 
     def validate(self, systems):
         rmse_f = []
+        rmse_e = []
+        natoms = []
         for sys in systems:
             if sys is None:
                 rmse_f.append([])
+                rmse_e.append([])
                 continue
             k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
             rmse_f_sys = []
+            rmse_e_sys = []
+            natoms_sys = []
             for i in range(len(k)):
                 cell = k[i].data["cells"][0]
                 coord = k[i].data["coords"][0]
                 force0 = k[i].data["forces"][0]
+                energy0 = k[i].data["energies"][0]
                 atype = k[i].data["atom_types"]
                 e, f, v = self.evaluate(coord, cell, atype)
 
@@ -69,23 +75,28 @@ class SelectSamples(OP, ABC):
                             (force0[i][2] - f[i][2]) ** 2
                 err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
                 rmse_f_sys.append(err_f)
+                rmse_e_sys.append(abs(energy0-e)/force0.shape[0])
+                natoms_sys.append(force0.shape[0])
             rmse_f.append(rmse_f_sys)
-        return rmse_f
+            rmse_e.append(rmse_e_sys)
+            natoms.append(natoms_sys)
+        return rmse_f, rmse_e, natoms
 
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f = self.validate(ip["valid_systems"])
-        nf = sum([len(i) for i in rmse_f])
-        rmse_f = np.sqrt(sum([sum([j**2 for j in i]) for i in rmse_f]) / nf)
+        rmse_f, rmse_e, natoms = self.validate(ip["valid_systems"])
+        na = sum([sum(i) for i in natoms])
+        rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
+        rmse_e = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_e, natoms)]) / na)
         n_current = 0
         for sys in ip["current_systems"]:
             if sys is not None:
                 k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
                 n_current += len(k)
-        ip["learning_curve"].append([n_current, float(rmse_f)])
+        ip["learning_curve"].append([n_current, float(rmse_f), float(rmse_e)])
 
-        rmse_f = self.validate(ip["candidate_systems"])
+        rmse_f, _, _ = self.validate(ip["candidate_systems"])
         nf = sum([len(i) for i in rmse_f])
         if nf == 0:
             return OPIO({
@@ -97,7 +108,7 @@ class SelectSamples(OP, ABC):
                 "learning_curve": ip["learning_curve"],
             })
         f_max = max([max(i) for i in rmse_f if len(i) > 0])
-        f_avg = np.sqrt(sum([sum([j**2 for j in i]) for i in rmse_f]) / nf)
+        f_avg = sum([sum(i) for i in rmse_f]) / nf
         f_min = min([min(i) for i in rmse_f if len(i) > 0])
         print('max force (eV/A): ', f_max)
         print('avg force (eV/A): ', f_avg)

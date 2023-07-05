@@ -28,13 +28,20 @@ def main_parser():
     )
     parser_submit.add_argument("CONFIG", help="the config file.")
 
-    parser_submit = subparsers.add_parser(
+    parser_resubmit = subparsers.add_parser(
         "resubmit",
         help="Resubmit a data-cleaning workflow",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser_submit.add_argument("CONFIG", help="the config file.")
-    parser_submit.add_argument("ID", help="the workflow ID.")
+    parser_resubmit.add_argument("CONFIG", help="the config file.")
+    parser_resubmit.add_argument("ID", help="the workflow ID.")
+    parser_resubmit.add_argument(
+        "-f",
+        "--from",
+        type=str,
+        default=None,
+        help="key of the step restart from",
+    )
     return parser
 
 
@@ -64,6 +71,19 @@ def main():
     elif args.command == "resubmit":
         wf0 = Workflow(id=args.ID)
         reused_steps = [step for step in wf0.query_step() if step.key is not None and step.phase == "Succeeded"]
+        restart_from = getattr(args, "from", None)
+        if restart_from is not None:
+            fields = restart_from.split("-")
+            iter = int(fields[1])
+            task = fields[2]
+            if task == "train":
+                reused_steps = [s for s in reused_steps
+                                if (s.key.startswith("iter-") and int(s.key.split("-")[1]) < iter)
+                                or s.key == "split-dataset"]
+            elif task == "select":
+                reused_steps = [s for s in reused_steps
+                                if (s.key.startswith("iter-") and int(s.key.split("-")[1]) < iter)
+                                or s.key in ["split-dataset", "iter-%s-train" % iter]]
         with open(args.CONFIG, "r") as f:
             config = json.load(f)
         wf = build_workflow(config)
