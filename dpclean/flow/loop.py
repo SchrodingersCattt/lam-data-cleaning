@@ -2,6 +2,7 @@ import glob
 import logging
 import os
 from importlib import import_module
+from typing import List, Union
 
 import dflow
 import dpclean
@@ -18,10 +19,12 @@ class ActiveLearning(Steps):
                  select_executor=None, train_executor=None, resume=True):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
-        self.inputs.parameters["max_selected"] = InputParameter(type=int)
+        self.inputs.parameters["max_selected"] = InputParameter(type=Union[int, List[int]])
         self.inputs.parameters["threshold"] = InputParameter(type=float)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
         self.inputs.parameters["learning_curve"] = InputParameter(type=list)
+        self.inputs.parameters["select_type"] = InputParameter(type=str)
+        self.inputs.parameters["ratio_selected"] = InputParameter(type=Union[float, List[float]])
         self.inputs.artifacts["candidate_systems"] = InputArtifact()
         self.inputs.artifacts["current_systems"] = InputArtifact()
         self.inputs.artifacts["valid_systems"] = InputArtifact()
@@ -50,8 +53,11 @@ class ActiveLearning(Steps):
                                       image_pull_policy=select_image_pull_policy,
                                       python_packages=dpclean.__path__),
             parameters={"max_selected": self.inputs.parameters["max_selected"],
+                        "iter": self.inputs.parameters["iter"],
                         "threshold": self.inputs.parameters["threshold"],
-                        "learning_curve": self.inputs.parameters["learning_curve"]},
+                        "learning_curve": self.inputs.parameters["learning_curve"],
+                        "select_type": self.inputs.parameters["select_type"],
+                        "ratio_selected": self.inputs.parameters["ratio_selected"]},
             artifacts={"current_systems": self.inputs.artifacts["current_systems"],
                        "candidate_systems": self.inputs.artifacts["candidate_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -68,7 +74,9 @@ class ActiveLearning(Steps):
                         "max_selected": self.inputs.parameters["max_selected"],
                         "threshold": self.inputs.parameters["threshold"],
                         "train_params": self.inputs.parameters["train_params"],
-                        "learning_curve": select_step.outputs.parameters["learning_curve"]},
+                        "learning_curve": select_step.outputs.parameters["learning_curve"],
+                        "select_type": self.inputs.parameters["select_type"],
+                        "ratio_selected": self.inputs.parameters["ratio_selected"]},
             artifacts={"candidate_systems": select_step.outputs.artifacts["remaining_systems"],
                        "current_systems": select_step.outputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -98,6 +106,9 @@ def build_workflow(config):
     wf_name = config.get("name", "clean-data")
     dataset = config["dataset"]
     init_data = config.get("init_data", None)
+    n_init = config.get("n_init", None)
+    ratio_init = config.get("ratio_init", None)
+    select_type = config.get("select_type", "global")
     valid_data = config["valid_data"]
     finetune_model = config.get("finetune_model", None)
     resume = config.get("resume", True)
@@ -122,7 +133,8 @@ def build_workflow(config):
     select_executor = select.get("executor")
     if select_executor is not None:
         select_executor = DispatcherExecutor(**select_executor)
-    max_selected = select["max_selected"]
+    max_selected = select.get("max_selected", None)
+    ratio_selected = select.get("ratio_selected", None)
     threshold = select["threshold"]
 
     train_op = import_func(train["op"])
@@ -159,7 +171,9 @@ def build_workflow(config):
         template=PythonOPTemplate(split_op, image=split_image,
                                   image_pull_policy=split_image_pull_policy,
                                   python_packages=dpclean.__path__),
-        parameters={"n_init": max_selected if init_data is None else 0},
+        parameters={"n_init": n_init if init_data is None else 0,
+                    "ratio_init": ratio_init if init_data is None else 0.0,
+                    "select_type": select_type},
         artifacts={"dataset": dataset_artifact,
                    "init_systems": init_data_artifact},
         executor=split_executor,
@@ -198,7 +212,9 @@ def build_workflow(config):
         parameters={"max_selected": max_selected,
                     "threshold": threshold,
                     "train_params": train_params,
-                    "learning_curve": []},
+                    "learning_curve": [],
+                    "select_type": select_type,
+                    "ratio_selected": ratio_selected},
         artifacts={"current_systems": split_step.outputs.artifacts["init_systems"],
                    "candidate_systems": split_step.outputs.artifacts["systems"],
                    "valid_systems": valid_data_artifact,
