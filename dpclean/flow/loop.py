@@ -23,7 +23,7 @@ class ActiveLearning(Steps):
         self.inputs.parameters["max_selected"] = InputParameter(type=Union[int, List[int]])
         self.inputs.parameters["threshold"] = InputParameter(type=float)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
-        self.inputs.parameters["learning_curve"] = InputParameter(type=list)
+        self.inputs.parameters["learning_curve"] = InputParameter(type=dict)
         self.inputs.parameters["select_type"] = InputParameter(type=str)
         self.inputs.parameters["ratio_selected"] = InputParameter(type=Union[float, List[float]])
         self.inputs.artifacts["candidate_systems"] = InputArtifact()
@@ -31,7 +31,7 @@ class ActiveLearning(Steps):
         self.inputs.artifacts["valid_systems"] = InputArtifact()
         self.inputs.artifacts["finetune_model"] = InputArtifact()
         self.inputs.artifacts["model"] = InputArtifact()
-        self.outputs.parameters["learning_curve"] = OutputParameter(type=list)
+        self.outputs.parameters["learning_curve"] = OutputParameter(type=dict)
 
         train_step = Step(
             "train",
@@ -335,7 +335,7 @@ def build_active_learning_workflow(config):
         parameters={"max_selected": max_selected,
                     "threshold": threshold,
                     "train_params": train_params,
-                    "learning_curve": [],
+                    "learning_curve": {},
                     "select_type": select_type,
                     "ratio_selected": ratio_selected},
         artifacts={"current_systems": split_step.outputs.artifacts["init_systems"],

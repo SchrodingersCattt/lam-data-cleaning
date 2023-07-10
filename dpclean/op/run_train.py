@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List
 
-import numpy as np
 from dflow.python import OP, OPIO, Artifact, NestedDict, OPIOSign
 
 
