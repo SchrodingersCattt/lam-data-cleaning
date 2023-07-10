@@ -10,21 +10,13 @@ from dflow.python import OP, OPIO, Artifact, OPIOSign, Parameter
 type_map = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og"]
 
 
-class SelectSamples(OP, ABC):
+class Validate(OP, ABC):
     @classmethod
     def get_input_sign(cls):
         return OPIOSign(
             {
-                "current_systems": Artifact(List[Path]),
-                "candidate_systems": Artifact(List[Path]),
                 "valid_systems": Artifact(List[Path]),
                 "model": Artifact(Path),
-                "max_selected": Union[int, List[int]],
-                "iter": int,
-                "threshold": float,
-                "learning_curve": list,
-                "select_type": Parameter(str, default="global"),
-                "ratio_selected": Union[float, List[float]],
             }
         )
 
@@ -32,12 +24,7 @@ class SelectSamples(OP, ABC):
     def get_output_sign(cls):
         return OPIOSign(
             {
-                "remaining_systems": Artifact(List[Path]),
-                "current_systems": Artifact(List[Path]),
-                "n_selected": int,
-                "n_remaining": int,
-                "converged": bool,
-                "learning_curve": list,
+                "results": dict,
             }
         )
 
@@ -95,6 +82,50 @@ class SelectSamples(OP, ABC):
             rmse_e.append(rmse_e_sys)
             natoms.append(natoms_sys)
         return rmse_f, rmse_e, natoms
+
+    @OP.exec_sign_check
+    def execute(self, ip: OPIO) -> OPIO:
+        self.load_model(ip["model"])
+        rmse_f, rmse_e, natoms = self.validate(ip["valid_systems"])
+        na = sum([sum(i) for i in natoms])
+        rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
+        rmse_e = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_e, natoms)]) / na)
+        results = {"rmse_f": float(rmse_f), "rmse_e": float(rmse_e)}
+        return OPIO({
+            "results": results,
+        })
+
+
+class SelectSamples(Validate, ABC):
+    @classmethod
+    def get_input_sign(cls):
+        return OPIOSign(
+            {
+                "current_systems": Artifact(List[Path]),
+                "candidate_systems": Artifact(List[Path]),
+                "valid_systems": Artifact(List[Path]),
+                "model": Artifact(Path),
+                "max_selected": Union[int, List[int]],
+                "iter": int,
+                "threshold": float,
+                "learning_curve": list,
+                "select_type": Parameter(str, default="global"),
+                "ratio_selected": Union[float, List[float]],
+            }
+        )
+
+    @classmethod
+    def get_output_sign(cls):
+        return OPIOSign(
+            {
+                "remaining_systems": Artifact(List[Path]),
+                "current_systems": Artifact(List[Path]),
+                "n_selected": int,
+                "n_remaining": int,
+                "converged": bool,
+                "learning_curve": list,
+            }
+        )
 
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
@@ -182,7 +213,7 @@ class SelectSamples(OP, ABC):
                     if mixed_type:
                         d0 = dpdata.MultiSystems()
                         d0.load_systems_from_file(path0, fmt="deepmd/npy/mixed")
-                        k0 = d[0]
+                        k0 = d0[0]
                     else:
                         k0 = dpdata.LabeledSystem(path0, fmt="deepmd/npy")
                     frames += k0

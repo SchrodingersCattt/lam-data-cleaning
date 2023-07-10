@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-from dflow.python import OP, OPIO, Artifact, OPIOSign
+from dflow.python import OP, OPIO, Artifact, NestedDict, OPIOSign
 
 
 class RunTrain(OP, ABC):
@@ -11,7 +11,7 @@ class RunTrain(OP, ABC):
     def get_input_sign(cls):
         return OPIOSign(
             {
-                "train_systems": Artifact(List[Path]),
+                "train_systems": Artifact(NestedDict[Path]),
                 "valid_systems": Artifact(List[Path]),
                 "finetune_model": Artifact(Path, optional=True),
                 "model": Artifact(Path, optional=True),

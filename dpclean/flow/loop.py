@@ -7,10 +7,11 @@ from typing import List, Union
 import dflow
 import dpclean
 from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
-                   Step, Steps, Workflow, if_expression, upload_artifact)
+                   Step, Steps, Workflow, argo_range, if_expression,
+                   upload_artifact)
 from dflow.plugins.dispatcher import DispatcherExecutor
-from dflow.python import PythonOPTemplate
-from dpclean.op import SplitDataset
+from dflow.python import PythonOPTemplate, Slices
+from dpclean.op import SplitDataset, Statistics, Summary
 
 
 class ActiveLearning(Steps):
@@ -102,6 +103,128 @@ def import_func(s : str):
 
 
 def build_workflow(config):
+    task = config.get("task", "active_learning")
+    if task == "active_learning":
+        return build_active_learning_workflow(config)
+    elif task == "train_only":
+        return build_train_only_workflow(config)
+
+
+def build_train_only_workflow(config):
+    dflow.config["detect_empty_dir"] = False
+    wf_name = config.get("name", "clean-data")
+    dataset = config["dataset"]
+    if isinstance(dataset, str) and dataset.startswith("oss://"):
+        dataset_artifact = S3Artifact(key=dataset[6:])
+    else:
+        dataset_artifact = upload_artifact(dataset)
+        if hasattr(dataset_artifact, "key"):
+            logging.info("Dataset uploaded to %s" % dataset_artifact.key)
+    finetune_model = config.get("finetune_model", None)
+    if finetune_model is None:
+        finetune_model_artifact = None
+    elif isinstance(finetune_model, str) and finetune_model.startswith("oss://"):
+        finetune_model_artifact = S3Artifact(key=finetune_model[6:])
+    else:
+        finetune_model_artifact = upload_artifact(finetune_model)
+        if hasattr(finetune_model_artifact, "key"):
+            logging.info("Finetune model uploaded to %s" % finetune_model_artifact.key)
+    valid_data = config["valid_data"]
+    if isinstance(valid_data, str) and valid_data.startswith("oss://"):
+        valid_data_artifact = S3Artifact(key=valid_data[6:])
+    else:
+        if isinstance(valid_data, str):
+            valid_data = [valid_data]
+        path_list = []
+        for ds in valid_data:
+            for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
+                path_list.append(os.path.dirname(f))
+        valid_data_artifact = upload_artifact(path_list)
+        if hasattr(valid_data_artifact, "key"):
+            logging.info("Validation data uploaded to %s" % valid_data_artifact.key)
+
+    train = config["train"]
+    train_op = import_func(train["op"])
+    train_image = train["image"]
+    train_image_pull_policy = train.get("image_pull_policy")
+    train_executor = train.get("executor")
+    if train_executor is not None:
+        train_executor = DispatcherExecutor(**train_executor)
+    train_params = train["params"]
+
+    valid = config["valid"]
+    valid_op = import_func(valid["op"])
+    valid_image = valid["image"]
+    valid_image_pull_policy = valid.get("image_pull_policy")
+    valid_executor = valid.get("executor")
+    if valid_executor is not None:
+        valid_executor = DispatcherExecutor(**valid_executor)
+
+    steps = Steps("train-validate")
+    steps.inputs.parameters["item"] = InputParameter(type=int)
+    steps.inputs.artifacts["train_systems"] = InputArtifact()
+    train_step = Step(
+        "train",
+        template=PythonOPTemplate(train_op, image=train_image,
+                                  image_pull_policy=train_image_pull_policy,
+                                  python_packages=dpclean.__path__),
+        parameters={"train_params": train_params},
+        artifacts={"train_systems": steps.inputs.artifacts["train_systems"],
+                   "valid_systems": valid_data_artifact,
+                   "finetune_model": finetune_model_artifact,
+                   "model": None},
+        executor=train_executor,
+        key="train-%s" % steps.inputs.parameters["item"],
+    )
+    steps.add(train_step)
+    valid_step = Step(
+        "validate",
+        template=PythonOPTemplate(valid_op, image=valid_image,
+                                  image_pull_policy=valid_image_pull_policy,
+                                  python_packages=dpclean.__path__),
+        artifacts={"valid_systems": valid_data_artifact,
+                   "model": train_step.outputs.artifacts["model"]},
+        executor=valid_executor,
+        key="valid-%s" % steps.inputs.parameters["item"],
+    )
+    steps.add(valid_step)
+    steps.outputs.parameters["results"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["results"])
+
+    wf = Workflow(wf_name)
+    stat_step = Step(
+        "statistics",
+        template=PythonOPTemplate(Statistics,
+                                  image="dptechnology/dpdata",
+                                  image_pull_policy="IfNotPresent",
+                                  python_packages=dpclean.__path__),
+        artifacts={"dataset": dataset_artifact},
+        key="statistics",
+    )
+    wf.add(stat_step)
+    train_step = Step(
+        "parallel-train",
+        template=steps,
+        parameters={"item": "{{item}}"},
+        artifacts={"train_systems": dataset_artifact},
+        slices=Slices(input_artifact=["train_systems"],
+                      output_parameter=["results"]),
+        with_param=argo_range(stat_step.outputs.parameters["n_subsets"]),
+    )
+    wf.add(train_step)
+    sum_step = Step(
+        "summary",
+        template=PythonOPTemplate(Summary,
+                                  image="dptechnology/dpdata",
+                                  image_pull_policy="IfNotPresent",
+                                  python_packages=dpclean.__path__),
+        parameters={"size_list": stat_step.outputs.parameters["size_list"],
+                    "results": train_step.outputs.parameters["results"]},
+        key="summary",
+    )
+    wf.add(sum_step)
+    return wf
+
+def build_active_learning_workflow(config):
     dflow.config["detect_empty_dir"] = False
     wf_name = config.get("name", "clean-data")
     dataset = config["dataset"]

@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
-from dpclean.op import SelectSamples
+from dpclean.op import SelectSamples, Validate
 
 
 def infer_model(
@@ -43,7 +43,7 @@ def infer_model(
     return ret1
 
 
-class DPPTSelectSamples(SelectSamples):
+class DPPTValidate(Validate):
     def load_model(self, model: Path):
         import torch
         from deepmd_pt.model.model import get_model
@@ -75,3 +75,7 @@ class DPPTSelectSamples(SelectSamples):
         f = model_pred["force"].cpu().detach().numpy()
         v = model_pred["virial"].cpu().detach().numpy()
         return e, f, v
+
+
+class DPPTSelectSamples(SelectSamples, DPPTValidate):
+    pass
