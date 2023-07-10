@@ -41,7 +41,7 @@ class Summary(OP):
         pyplot.legend()
         pyplot.savefig("lcurve.png")
 
-        lcurve["n_samples"] = ip["size_list"]
+        lcurve["nsamples"] = ip["size_list"]
         return OPIO({
             "lcurve": lcurve,
             "lcurve_image": Path("lcurve.png"),

@@ -52,10 +52,10 @@ class SplitDataset(OP):
                 n = math.ceil(nframes[i]*ip["ratio_init"])
                 indices.extend([(i, j) for j in random.sample(range(nframes[i]), n)])
 
-        init_systems = [None] * len(systems)
+        init_systems = []
         if ip["init_systems"] is not None:
             init_systems += ip["init_systems"]
-        remaining_systems = [None] * len(systems)
+        remaining_systems = []
         for i, path in enumerate(systems):
             selected = [index[1] for index in indices if index[0] == i]
             mixed_type = len(list(path.glob("*/real_atom_types.npy"))) > 0
@@ -72,15 +72,15 @@ class SplitDataset(OP):
                     frames.to_deepmd_npy_mixed(target)
                 else:
                     frames.to_deepmd_npy(target)
-                init_systems[i] = target
+                init_systems.append(target)
             if len(selected) < len(k):
-                target = Path("iter") / path.relative_to(ip["dataset"])
+                target = path
                 remain = k.sub_system([j for j in range(len(k)) if j not in selected])
                 if mixed_type:
                     remain.to_deepmd_npy_mixed(target)
                 else:
                     remain.to_deepmd_npy(target)
-                remaining_systems[i] = target
+                remaining_systems.append(target)
 
         return OPIO({
             "systems": remaining_systems,
