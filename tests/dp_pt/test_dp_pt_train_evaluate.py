@@ -1,53 +1,23 @@
-{
-    "name": "semi-conductor",
-    "dataset": "oss://11881/11176/store/upload/ed6f934a-6dda-4d02-b679-82a7c3277f70/tmpy4nup4y6.tgz",
-    "valid_data": "oss://11881/11176/store/upload/0af95beb-8648-46d8-9066-88b44a86532f/tmpqibz2yqq.tgz",
-    "resume": true,
-    "select_type": "system",
-    "ratio_init": 0.001,
-    "split": {
-        "image_pull_policy": "IfNotPresent"
-    },
-    "select": {
-        "op": "dpclean.dp_pt.DPPTSelectSamples",
-        "image": "registry.dp.tech/dplc/deepmd-pytorch:latest",
-        "image_pull_policy": "IfNotPresent",
-        "executor": {
-            "image_pull_policy": "IfNotPresent",
-            "machine_dict": {
-                "batch_type": "Bohrium",
-                "context_type": "Bohrium",
-                "remote_profile": {
-                    "input_data": {
-                        "job_type": "container",
-                        "platform": "ali",
-                        "scass_type": "c8_m31_1 * NVIDIA T4"
-                    }
-                }
-            }
-        },
-        "ratio_selected": [0.001, 0.002, 0.002, 0.004, 0.004, 0.008, 0.008, 0.016, 0.016, 0.032, 0.032],
-        "threshold": 0.0000000020
-    },
-    "train": {
-        "op": "dpclean.dp_pt.RunDPPTTrain",
-        "image": "registry.dp.tech/dplc/deepmd-pytorch:latest",
-        "image_pull_policy": "IfNotPresent",
-        "executor": {
-            "image_pull_policy": "IfNotPresent",
-            "machine_dict": {
-                "batch_type": "Bohrium",
-                "context_type": "Bohrium",
-                "remote_profile": {
-                    "input_data": {
-                        "job_type": "container",
-                        "platform": "ali",
-                        "scass_type": "c8_m31_1 * NVIDIA T4"
-                    }
-                }
-            }
-        },
-        "params": {
+import shutil
+import unittest
+from pathlib import Path
+
+import numpy as np
+from dpclean.dp_pt import DPPTSelectSamples, RunDPPTTrain
+
+
+class TestTrainEvaluate:
+    def setUp(self):
+        self.train_systems = [Path(__file__).parent.parent / "water/data/single"]
+        self.valid_systems = [Path(__file__).parent.parent / "water/data/single"]
+        self.coord = np.load(Path(__file__).parent.parent / "water/data/single/set.000/coord.npy").reshape([-1, 3])
+        self.cell = 12.444661 * np.eye(3)
+        self.atype = np.array([7] * 64 + [0] * 128)
+
+
+class TestDPPTTrainEvaluate(TestTrainEvaluate, unittest.TestCase):
+    def test(self):
+        train_params = {
             "model": {
                 "descriptor": {
                     "type": "se_atten",
@@ -59,20 +29,20 @@
                         50,
                         100
                     ],
-                    "resnet_dt": false,
+                    "resnet_dt": False,
                     "axis_neuron": 12,
                     "seed": 1,
                     "attn": 128,
                     "attn_layer": 0,
-                    "attn_dotr": true,
-                    "attn_mask": false,
-                    "post_ln": true,
-                    "ffn": false,
+                    "attn_dotr": True,
+                    "attn_mask": False,
+                    "post_ln": True,
+                    "ffn": False,
                     "ffn_embed_dim": 1024,
                     "activation": "tanh",
                     "scaling_factor": 1.0,
                     "head_num": 1,
-                    "normalize": true,
+                    "normalize": True,
                     "temperature": 1.0
                 },
                 "fitting_net": {
@@ -81,7 +51,7 @@
                         240,
                         240
                     ],
-                    "resnet_dt": true,
+                    "resnet_dt": True,
                     "seed": 1
                 },
                 "type_map": [
@@ -226,12 +196,27 @@
                 "validation_data": {
                     "batch_size": 1
                 },
-                "numb_steps": 100000,
+                "numb_steps": 2,
                 "seed": 1,
                 "disp_file": "lcurve.out",
-                "disp_freq": 100,
-                "save_freq": 1000
+                "disp_freq": 1,
+                "save_freq": 1
             }
         }        
-    }
-}
+        op_in = {
+            "train_systems": self.train_systems,
+            "valid_systems": self.valid_systems,
+            "train_params": train_params,
+        }
+        op = RunDPPTTrain()
+        op_out = op.execute(op_in)
+        assert op_out["model"].exists()
+        assert op_out["output_dir"].is_dir()
+
+        op = DPPTSelectSamples()
+        op.load_model(op_out["model"])
+        e, f, v = op.evaluate(self.coord, self.cell, self.atype)
+        assert f.shape == (192, 3)
+
+        shutil.rmtree(op_out["output_dir"])
+

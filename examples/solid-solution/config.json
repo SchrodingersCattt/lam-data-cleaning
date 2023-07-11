@@ -1,10 +1,10 @@
 {
-    "name": "semi-conductor",
-    "dataset": "oss://11881/11176/store/upload/ed6f934a-6dda-4d02-b679-82a7c3277f70/tmpy4nup4y6.tgz",
-    "valid_data": "oss://11881/11176/store/upload/0af95beb-8648-46d8-9066-88b44a86532f/tmpqibz2yqq.tgz",
+    "name": "solid-solution",
+    "dataset": "oss://11881/11176/store/upload/77a5889d-41a3-4d4d-abf2-358e569a4aa7/tmp_0w9mbqy.tgz",
+    "valid_data": "oss://11881/11176/store/upload/0482241c-26c3-43d3-87bc-ae0bef06f0d3/tmp65y4_zy0.tgz",
     "resume": true,
     "select_type": "system",
-    "ratio_init": 0.001,
+    "ratio_init": 0.01,
     "split": {
         "image_pull_policy": "IfNotPresent"
     },
@@ -26,7 +26,7 @@
                 }
             }
         },
-        "ratio_selected": [0.001, 0.002, 0.002, 0.004, 0.004, 0.008, 0.008, 0.016, 0.016, 0.032, 0.032],
+        "ratio_selected": [0.01, 0.01, 0.02, 0.02, 0.02, 0.04, 0.04, 0.04, 0.08, 0.08, 0.08],
         "threshold": 0.0000000020
     },
     "train": {

@@ -1,10 +1,9 @@
 {
-    "name": "semi-conductor",
-    "dataset": "oss://11881/11176/store/upload/ed6f934a-6dda-4d02-b679-82a7c3277f70/tmpy4nup4y6.tgz",
-    "valid_data": "oss://11881/11176/store/upload/0af95beb-8648-46d8-9066-88b44a86532f/tmpqibz2yqq.tgz",
+    "name": "hea",
+    "dataset": "oss://11881/11176/store/upload/5116e1b4-a68b-4501-836e-cffe835164a5/tmp0aonamgy.tgz",
+    "valid_data": "oss://11881/11176/store/upload/aa18f96d-cd25-4de7-8462-6d6c25a19f16/tmpj4rxra7p.tgz",
     "resume": true,
-    "select_type": "system",
-    "ratio_init": 0.001,
+    "n_init": 50,
     "split": {
         "image_pull_policy": "IfNotPresent"
     },
@@ -26,7 +25,7 @@
                 }
             }
         },
-        "ratio_selected": [0.001, 0.002, 0.002, 0.004, 0.004, 0.008, 0.008, 0.016, 0.016, 0.032, 0.032],
+        "max_selected": [50, 100, 100, 200, 200, 400, 400, 800, 800, 1600, 1600, 3200, 3200, 6400, 6400],
         "threshold": 0.0000000020
     },
     "train": {
