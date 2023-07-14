@@ -9,9 +9,10 @@ import dpclean
 from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
                    Step, Steps, Workflow, argo_range, if_expression,
                    upload_artifact)
+from dflow.plugins.datasets import DatasetsArtifact
 from dflow.plugins.dispatcher import DispatcherExecutor
 from dflow.python import PythonOPTemplate, Slices
-from dpclean.op import SplitDataset, Statistics, Summary
+from dpclean.op import SplitDataset, Summary
 
 
 class ActiveLearning(Steps):
@@ -92,6 +93,7 @@ class ActiveLearning(Steps):
             _then=next_step.outputs.parameters["learning_curve"],
             _else=select_step.outputs.parameters["learning_curve"])
 
+
 def import_func(s : str):
     fields = s.split(".")
     if fields[0] == __name__ or fields[0] == "":
@@ -100,6 +102,27 @@ def import_func(s : str):
     else:
         mod = import_module(".".join(fields[:-1]))
     return getattr(mod, fields[-1])
+
+
+def get_artifact(urn, name="data", detect_systems=False):
+    if urn is None:
+        return None
+    elif isinstance(urn, str) and urn.startswith("oss://"):
+        return S3Artifact(key=urn[6:])
+    elif isinstance(urn, str) and urn.startswith("launching+datasets://"):
+        return DatasetsArtifact.from_urn(urn)
+    else:
+        if detect_systems:
+            path = []
+            for ds in urn if isinstance(urn, list) else [urn]:
+                for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
+                    path.append(os.path.dirname(f))
+        else:
+            path = urn
+        artifact = upload_artifact(path)
+        if hasattr(artifact, "key"):
+            logging.info("%s uploaded to %s" % (name, artifact.key))
+        return artifact
 
 
 def build_workflow(config):
@@ -114,34 +137,19 @@ def build_train_only_workflow(config):
     dflow.config["detect_empty_dir"] = False
     wf_name = config.get("name", "clean-data")
     dataset = config["dataset"]
-    if isinstance(dataset, str) and dataset.startswith("oss://"):
-        dataset_artifact = S3Artifact(key=dataset[6:])
-    else:
-        dataset_artifact = upload_artifact(dataset)
-        if hasattr(dataset_artifact, "key"):
-            logging.info("Dataset uploaded to %s" % dataset_artifact.key)
+    dataset_artifact = get_artifact(dataset, "dataset")
     finetune_model = config.get("finetune_model", None)
-    if finetune_model is None:
-        finetune_model_artifact = None
-    elif isinstance(finetune_model, str) and finetune_model.startswith("oss://"):
-        finetune_model_artifact = S3Artifact(key=finetune_model[6:])
-    else:
-        finetune_model_artifact = upload_artifact(finetune_model)
-        if hasattr(finetune_model_artifact, "key"):
-            logging.info("Finetune model uploaded to %s" % finetune_model_artifact.key)
+    finetune_model_artifact = get_artifact(finetune_model, "finetune model")
     valid_data = config["valid_data"]
-    if isinstance(valid_data, str) and valid_data.startswith("oss://"):
-        valid_data_artifact = S3Artifact(key=valid_data[6:])
-    else:
-        if isinstance(valid_data, str):
-            valid_data = [valid_data]
-        path_list = []
-        for ds in valid_data:
-            for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
-                path_list.append(os.path.dirname(f))
-        valid_data_artifact = upload_artifact(path_list)
-        if hasattr(valid_data_artifact, "key"):
-            logging.info("Validation data uploaded to %s" % valid_data_artifact.key)
+    valid_data_artifact = get_artifact(valid_data, "validation data", True)
+
+    stat = config.get("statistics", {})
+    stat_op = import_func(stat.get("op", "dpclean.op.Statistics"))
+    stat_image = stat.get("image", "dptechnology/dpdata")
+    stat_image_pull_policy = stat.get("image_pull_policy")
+    stat_executor = stat.get("executor")
+    if stat_executor is not None:
+        stat_executor = DispatcherExecutor(**stat_executor)
 
     train = config["train"]
     train_op = import_func(train["op"])
@@ -193,11 +201,12 @@ def build_train_only_workflow(config):
     wf = Workflow(wf_name)
     stat_step = Step(
         "statistics",
-        template=PythonOPTemplate(Statistics,
-                                  image="dptechnology/dpdata",
-                                  image_pull_policy="IfNotPresent",
+        template=PythonOPTemplate(stat_op,
+                                  image=stat_image,
+                                  image_pull_policy=stat_image_pull_policy,
                                   python_packages=dpclean.__path__),
         artifacts={"dataset": dataset_artifact},
+        executor=stat_executor,
         key="statistics",
     )
     wf.add(stat_step)
@@ -269,26 +278,8 @@ def build_active_learning_workflow(config):
     train_params = train["params"]
 
     wf = Workflow(wf_name)
-    if isinstance(dataset, str) and dataset.startswith("oss://"):
-        dataset_artifact = S3Artifact(key=dataset[6:])
-    else:
-        dataset_artifact = upload_artifact(dataset)
-        if hasattr(dataset_artifact, "key"):
-            logging.info("Dataset uploaded to %s" % dataset_artifact.key)
-    if init_data is None:
-        init_data_artifact = None
-    elif isinstance(init_data, str) and init_data.startswith("oss://"):
-        init_data_artifact = S3Artifact(key=init_data[6:])
-    else:
-        if isinstance(init_data, str):
-            init_data = [init_data]
-        path_list = []
-        for ds in init_data:
-            for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
-                path_list.append(os.path.dirname(f))
-        init_data_artifact = upload_artifact(path_list)
-        if hasattr(init_data_artifact, "key"):
-            logging.info("Initial data uploaded to %s" % init_data_artifact.key)
+    dataset_artifact = get_artifact(dataset, "dataset")
+    init_data_artifact = get_artifact(init_data, "init data", True)
     split_step = Step(
         "split-dataset",
         template=PythonOPTemplate(split_op, image=split_image,
@@ -309,26 +300,8 @@ def build_active_learning_workflow(config):
                                      train_image_pull_policy, select_executor,
                                      train_executor, resume)
 
-    if finetune_model is None:
-        finetune_model_artifact = None
-    elif isinstance(finetune_model, str) and finetune_model.startswith("oss://"):
-        finetune_model_artifact = S3Artifact(key=finetune_model[6:])
-    else:
-        finetune_model_artifact = upload_artifact(finetune_model)
-        if hasattr(finetune_model_artifact, "key"):
-            logging.info("Finetune model uploaded to %s" % finetune_model_artifact.key)
-    if isinstance(valid_data, str) and valid_data.startswith("oss://"):
-        valid_data_artifact = S3Artifact(key=valid_data[6:])
-    else:
-        if isinstance(valid_data, str):
-            valid_data = [valid_data]
-        path_list = []
-        for ds in valid_data:
-            for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
-                path_list.append(os.path.dirname(f))
-        valid_data_artifact = upload_artifact(path_list)
-        if hasattr(valid_data_artifact, "key"):
-            logging.info("Validation data uploaded to %s" % valid_data_artifact.key)
+    finetune_model_artifact = get_artifact(finetune_model, "finetune model")
+    valid_data_artifact = get_artifact(valid_data, "validation data", True)
     loop_step = Step(
         "active-learning-loop",
         template=active_learning,
