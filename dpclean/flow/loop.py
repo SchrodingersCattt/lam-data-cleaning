@@ -24,6 +24,7 @@ class ActiveLearning(Steps):
         self.inputs.parameters["max_selected"] = InputParameter(type=Union[int, List[int]])
         self.inputs.parameters["threshold"] = InputParameter(type=float)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
+        self.inputs.parameters["resume_lr"] = InputParameter(type=float)
         self.inputs.parameters["learning_curve"] = InputParameter(type=dict)
         self.inputs.parameters["select_type"] = InputParameter(type=str)
         self.inputs.parameters["ratio_selected"] = InputParameter(type=Union[float, List[float]])
@@ -39,7 +40,8 @@ class ActiveLearning(Steps):
             template=PythonOPTemplate(train_op, image=train_image,
                                       image_pull_policy=train_image_pull_policy,
                                       python_packages=dpclean.__path__),
-            parameters={"train_params": self.inputs.parameters["train_params"]},
+            parameters={"train_params": self.inputs.parameters["train_params"],
+                        "resume_lr": self.inputs.parameters["resume_lr"]},
             artifacts={"train_systems": self.inputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
                        "finetune_model": self.inputs.artifacts["finetune_model"],
@@ -76,6 +78,7 @@ class ActiveLearning(Steps):
                         "max_selected": self.inputs.parameters["max_selected"],
                         "threshold": self.inputs.parameters["threshold"],
                         "train_params": self.inputs.parameters["train_params"],
+                        "resume_lr": self.inputs.parameters["resume_lr"],
                         "learning_curve": select_step.outputs.parameters["learning_curve"],
                         "select_type": self.inputs.parameters["select_type"],
                         "ratio_selected": self.inputs.parameters["ratio_selected"]},
@@ -276,6 +279,7 @@ def build_active_learning_workflow(config):
     if train_executor is not None:
         train_executor = DispatcherExecutor(**train_executor)
     train_params = train["params"]
+    resume_lr = train.get("resume_lr", None) if resume else None
 
     wf = Workflow(wf_name)
     dataset_artifact = get_artifact(dataset, "dataset")
@@ -308,6 +312,7 @@ def build_active_learning_workflow(config):
         parameters={"max_selected": max_selected,
                     "threshold": threshold,
                     "train_params": train_params,
+                    "resume_lr": resume_lr,
                     "learning_curve": {},
                     "select_type": select_type,
                     "ratio_selected": ratio_selected},
