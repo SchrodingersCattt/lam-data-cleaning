@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from dpclean.op import SelectSamples, Validate
@@ -12,11 +12,12 @@ class DPValidate(Validate):
 
     def evaluate(self,
                  coord: np.ndarray,
-                 cell: np.ndarray,
+                 cell: Optional[np.ndarray],
                  atype: List[int]
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         coord = coord.reshape([1, -1])
-        cell = cell.reshape([1, -1])
+        if cell is not None:
+            cell = cell.reshape([1, -1])
         e, f, v = self.dp.eval(coord, cell, atype)
         return e[0], f[0], v[0]
 

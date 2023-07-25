@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from dpclean.op import SelectSamples, Validate
@@ -14,17 +14,22 @@ def infer_model(
 ):
     import torch
     from deepmd_pt.utils.env import DEVICE
-    from deepmd_pt.utils.preprocess import Region3D, make_env_mat
+    from deepmd_pt.utils.preprocess import (Region3D, make_env_mat,
+                                            normalize_coord)
 
     rcut = model.descriptor.rcut
     sec = model.descriptor.sec
     if cell is not None:
+        pbc = True
         region = Region3D(cell)
+        _coord = normalize_coord(coord, region, atype.shape[0])
     else:
+        pbc = False
         region = None
+        _coord = coord.clone()
     # inputs: coord, atype, regin; rcut, sec
     selected, selected_loc, selected_type, merged_coord_shift, merged_mapping = \
-        make_env_mat(coord, atype, region, rcut, sec, type_split=type_split)
+        make_env_mat(_coord, atype, region, rcut, sec, pbc=pbc, type_split=type_split)
     # add batch dim
     [batch_coord, batch_atype, batch_shift, batch_mapping, batch_selected, batch_selected_loc, batch_selected_type] = \
         [torch.unsqueeze(ii, 0).to(DEVICE) if not isinstance(ii, list) else [torch.unsqueeze(kk, 0).to(DEVICE) for kk in ii] for ii in \
@@ -62,13 +67,14 @@ class DPPTValidate(Validate):
 
     def evaluate(self,
                  coord: np.ndarray,
-                 cell: np.ndarray,
+                 cell: Optional[np.ndarray],
                  atype: List[int]
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         import torch
 
         coord = torch.from_numpy(coord.astype(np.float64))
-        cell = torch.from_numpy(cell.astype(np.float64))
+        if cell is not None:
+            cell = torch.from_numpy(cell.astype(np.float64))
         atype = torch.from_numpy(atype)
         model_pred = infer_model(self.model, coord, cell, atype, self.type_split)
         e = model_pred["energy"].cpu().detach().numpy()

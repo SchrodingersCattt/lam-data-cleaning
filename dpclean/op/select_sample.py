@@ -1,7 +1,7 @@
 import math
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import dpdata
 import numpy as np
@@ -35,7 +35,7 @@ class Validate(OP, ABC):
     @abstractmethod
     def evaluate(self,
                  coord: np.ndarray,
-                 cell: np.ndarray,
+                 cell: Optional[np.ndarray],
                  atype: List[int]
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
@@ -57,6 +57,8 @@ class Validate(OP, ABC):
             natoms_sys = []
             for i in range(len(k)):
                 cell = k[i].data["cells"][0]
+                if k[i].nopbc:
+                    cell = None
                 coord = k[i].data["coords"][0]
                 force0 = k[i].data["forces"][0]
                 energy0 = k[i].data["energies"][0]
