@@ -1,6 +1,7 @@
 import glob
 import logging
 import os
+from copy import deepcopy
 from importlib import import_module
 from typing import List, Union
 
@@ -10,7 +11,7 @@ from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
                    Step, Steps, Workflow, argo_range, if_expression,
                    upload_artifact)
 from dflow.plugins.datasets import DatasetsArtifact
-from dflow.plugins.dispatcher import DispatcherExecutor
+from dflow.plugins.dispatcher import DispatcherExecutor, update_dict
 from dflow.python import PythonOPTemplate, Slices
 from dpclean.op import SplitDataset, Summary
 
@@ -18,13 +19,13 @@ from dpclean.op import SplitDataset, Summary
 class ActiveLearning(Steps):
     def __init__(self, select_op, train_op, select_image, train_image,
                  select_image_pull_policy=None, train_image_pull_policy=None,
-                 select_executor=None, train_executor=None, resume=True):
+                 select_executor=None, train_executor=None, resume=True,
+                 resume_train_params=None):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
         self.inputs.parameters["max_selected"] = InputParameter(type=Union[int, List[int]])
         self.inputs.parameters["threshold"] = InputParameter(type=float)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
-        self.inputs.parameters["resume_lr"] = InputParameter(type=float)
         self.inputs.parameters["learning_curve"] = InputParameter(type=dict)
         self.inputs.parameters["select_type"] = InputParameter(type=str)
         self.inputs.parameters["ratio_selected"] = InputParameter(type=Union[float, List[float]])
@@ -40,12 +41,11 @@ class ActiveLearning(Steps):
             template=PythonOPTemplate(train_op, image=train_image,
                                       image_pull_policy=train_image_pull_policy,
                                       python_packages=dpclean.__path__),
-            parameters={"train_params": self.inputs.parameters["train_params"],
-                        "resume_lr": self.inputs.parameters["resume_lr"]},
+            parameters={"train_params": self.inputs.parameters["train_params"]},
             artifacts={"train_systems": self.inputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
                        "finetune_model": self.inputs.artifacts["finetune_model"],
-                       "model": self.inputs.artifacts["model"] if resume else None},
+                       "model": self.inputs.artifacts["model"]},
             executor=train_executor,
             key="iter-%s-train" % self.inputs.parameters["iter"],
         )
@@ -71,14 +71,17 @@ class ActiveLearning(Steps):
         )
         self.add(select_step)
 
+        if resume and resume_train_params is not None:
+            train_params = resume_train_params
+        else:
+            train_params = self.inputs.parameters["train_params"]
         next_step = Step(
             "next-loop",
             template=self,
             parameters={"iter": self.inputs.parameters["iter"] + 1,
                         "max_selected": self.inputs.parameters["max_selected"],
                         "threshold": self.inputs.parameters["threshold"],
-                        "train_params": self.inputs.parameters["train_params"],
-                        "resume_lr": self.inputs.parameters["resume_lr"],
+                        "train_params": train_params,
                         "learning_curve": select_step.outputs.parameters["learning_curve"],
                         "select_type": self.inputs.parameters["select_type"],
                         "ratio_selected": self.inputs.parameters["ratio_selected"]},
@@ -86,7 +89,8 @@ class ActiveLearning(Steps):
                        "current_systems": select_step.outputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
                        "finetune_model": self.inputs.artifacts["finetune_model"],
-                       "model": train_step.outputs.artifacts["model"]},
+                       "model": train_step.outputs.artifacts["model"]
+                       if resume else None},
             when="%s > 0" % select_step.outputs.parameters["n_selected"],
         )
         self.add(next_step)
@@ -279,7 +283,11 @@ def build_active_learning_workflow(config):
     if train_executor is not None:
         train_executor = DispatcherExecutor(**train_executor)
     train_params = train["params"]
-    resume_lr = train.get("resume_lr", None) if resume else None
+    resume_train_params = None
+    resume_params = train.get("resume_params", None) if resume else None
+    if resume_params is not None:
+        resume_train_params = deepcopy(train_params)
+        update_dict(resume_train_params, resume_params)
 
     wf = Workflow(wf_name)
     dataset_artifact = get_artifact(dataset, "dataset")
@@ -299,10 +307,10 @@ def build_active_learning_workflow(config):
     )
     wf.add(split_step)
 
-    active_learning = ActiveLearning(select_op, train_op, select_image,
-                                     train_image, select_image_pull_policy,
-                                     train_image_pull_policy, select_executor,
-                                     train_executor, resume)
+    active_learning = ActiveLearning(
+        select_op, train_op, select_image, train_image,
+        select_image_pull_policy, train_image_pull_policy, select_executor,
+        train_executor, resume, resume_train_params)
 
     finetune_model_artifact = get_artifact(finetune_model, "finetune model")
     valid_data_artifact = get_artifact(valid_data, "validation data", True)
@@ -312,7 +320,6 @@ def build_active_learning_workflow(config):
         parameters={"max_selected": max_selected,
                     "threshold": threshold,
                     "train_params": train_params,
-                    "resume_lr": resume_lr,
                     "learning_curve": {},
                     "select_type": select_type,
                     "ratio_selected": ratio_selected},

@@ -14,8 +14,6 @@ class RunDPTrain(RunTrain):
             str(s) for s in ip["train_systems"]]
         params["training"]["validation_data"]["systems"] = [
             str(s) for s in ip["valid_systems"]]
-        if ip["model"] is not None and ip["resume_lr"] is not None:
-            params["learning_rate"]["start_lr"] = ip["resume_lr"]
 
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
