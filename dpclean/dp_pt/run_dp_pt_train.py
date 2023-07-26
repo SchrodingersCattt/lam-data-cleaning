@@ -14,8 +14,6 @@ class RunDPPTTrain(RunTrain):
             str(s) for s in ip["train_systems"]]
         params["training"]["validation_data"]["systems"] = [
             str(s) for s in ip["valid_systems"]]
-        if ip["model"] is not None and ip["resume_lr"] is not None:
-            params["learning_rate"]["start_lr"] = ip["resume_lr"]
 
         train_dir = Path("train")
         train_dir.mkdir(exist_ok=True)

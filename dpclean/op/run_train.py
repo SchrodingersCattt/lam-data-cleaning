@@ -15,7 +15,6 @@ class RunTrain(OP, ABC):
                 "finetune_model": Artifact(Path, optional=True),
                 "model": Artifact(Path, optional=True),
                 "train_params": dict,
-                "resume_lr": Parameter(float, default=None),
             }
         )
 
