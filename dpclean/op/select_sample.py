@@ -64,14 +64,14 @@ class Validate(OP, ABC):
                 energy0 = k[i].data["energies"][0]
                 ori_atype = k[i].data["atom_types"]
                 anames = k[i].data["atom_names"]
-                atype = np.array([type_map.index(anames[i]) for i in ori_atype])
+                atype = np.array([type_map.index(anames[j]) for j in ori_atype])
                 e, f, v = self.evaluate(coord, cell, atype)
 
                 lx = 0
-                for i in range(force0.shape[0]):
-                    lx += (force0[i][0] - f[i][0]) ** 2 + \
-                            (force0[i][1] - f[i][1]) ** 2 + \
-                            (force0[i][2] - f[i][2]) ** 2
+                for j in range(force0.shape[0]):
+                    lx += (force0[j][0] - f[j][0]) ** 2 + \
+                            (force0[j][1] - f[j][1]) ** 2 + \
+                            (force0[j][2] - f[j][2]) ** 2
                 err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
                 rmse_f_sys.append(err_f)
                 rmse_e_sys.append(abs(energy0-e)/force0.shape[0])

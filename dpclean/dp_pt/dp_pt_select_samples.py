@@ -33,7 +33,7 @@ def infer_model(
     # add batch dim
     [batch_coord, batch_atype, batch_shift, batch_mapping, batch_selected, batch_selected_loc, batch_selected_type] = \
         [torch.unsqueeze(ii, 0).to(DEVICE) if not isinstance(ii, list) else [torch.unsqueeze(kk, 0).to(DEVICE) for kk in ii] for ii in \
-        [coord, atype, merged_coord_shift, merged_mapping, selected, selected_loc, selected_type]]
+        [_coord, atype, merged_coord_shift, merged_mapping, selected, selected_loc, selected_type]]
     # inference, assumes pbc
     ret = model(
         batch_coord, batch_atype, None,
