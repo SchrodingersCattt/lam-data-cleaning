@@ -205,7 +205,7 @@ def build_train_only_workflow(config):
     steps.add(valid_step)
     steps.outputs.parameters["results"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["results"])
 
-    wf = Workflow(wf_name)
+    wf = Workflow(wf_name, parameters={"input": config})
     stat_step = Step(
         "statistics",
         template=PythonOPTemplate(stat_op,
@@ -289,7 +289,7 @@ def build_active_learning_workflow(config):
         resume_train_params = deepcopy(train_params)
         update_dict(resume_train_params, resume_params)
 
-    wf = Workflow(wf_name)
+    wf = Workflow(wf_name, parameters={"input": config})
     dataset_artifact = get_artifact(dataset, "dataset")
     init_data_artifact = get_artifact(init_data, "init data", True)
     split_step = Step(
