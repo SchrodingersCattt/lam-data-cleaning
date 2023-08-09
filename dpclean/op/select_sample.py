@@ -73,8 +73,10 @@ class Validate(OP, ABC):
                             (force0[j][1] - f[j][1]) ** 2 + \
                             (force0[j][2] - f[j][2]) ** 2
                 err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
+                err_e = abs(energy0 - e) / force0.shape[0]
+                print("System: %s frame: %s rmse_e: %s rmse_f: %s" % (sys, i, err_e, err_f))
                 rmse_f_sys.append(err_f)
-                rmse_e_sys.append(abs(energy0-e)/force0.shape[0])
+                rmse_e_sys.append(err_e)
                 natoms_sys.append(force0.shape[0])
             rmse_f.append(rmse_f_sys)
             rmse_e.append(rmse_e_sys)
