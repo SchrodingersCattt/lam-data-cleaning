@@ -20,7 +20,7 @@ class ActiveLearning(Steps):
     def __init__(self, select_op, train_op, select_image, train_image,
                  select_image_pull_policy=None, train_image_pull_policy=None,
                  select_executor=None, train_executor=None, resume=True,
-                 resume_train_params=None):
+                 resume_train_params=None, finetune_args=""):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
         self.inputs.parameters["max_selected"] = InputParameter(type=Union[int, List[int]])
@@ -41,7 +41,8 @@ class ActiveLearning(Steps):
             template=PythonOPTemplate(train_op, image=train_image,
                                       image_pull_policy=train_image_pull_policy,
                                       python_packages=dpclean.__path__),
-            parameters={"train_params": self.inputs.parameters["train_params"]},
+            parameters={"train_params": self.inputs.parameters["train_params"],
+                        "finetune_args": finetune_args},
             artifacts={"train_systems": self.inputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
                        "finetune_model": self.inputs.artifacts["finetune_model"],
@@ -166,6 +167,7 @@ def build_train_only_workflow(config):
     if train_executor is not None:
         train_executor = DispatcherExecutor(**train_executor)
     train_params = train["params"]
+    finetune_args = train.get("finetune_args", "")
 
     valid = config["valid"]
     valid_op = import_func(valid["op"])
@@ -183,7 +185,8 @@ def build_train_only_workflow(config):
         template=PythonOPTemplate(train_op, image=train_image,
                                   image_pull_policy=train_image_pull_policy,
                                   python_packages=dpclean.__path__),
-        parameters={"train_params": train_params},
+        parameters={"train_params": train_params,
+                    "finetune_args": finetune_args},
         artifacts={"train_systems": steps.inputs.artifacts["train_systems"],
                    "valid_systems": valid_data_artifact,
                    "finetune_model": finetune_model_artifact,
@@ -288,6 +291,7 @@ def build_active_learning_workflow(config):
     if resume_params is not None:
         resume_train_params = deepcopy(train_params)
         update_dict(resume_train_params, resume_params)
+    finetune_args = train.get("finetune_args", "")
 
     wf = Workflow(wf_name, parameters={"input": config})
     dataset_artifact = get_artifact(dataset, "dataset")
@@ -310,7 +314,7 @@ def build_active_learning_workflow(config):
     active_learning = ActiveLearning(
         select_op, train_op, select_image, train_image,
         select_image_pull_policy, train_image_pull_policy, select_executor,
-        train_executor, resume, resume_train_params)
+        train_executor, resume, resume_train_params, finetune_args)
 
     finetune_model_artifact = get_artifact(finetune_model, "finetune model")
     valid_data_artifact = get_artifact(valid_data, "validation data", True)

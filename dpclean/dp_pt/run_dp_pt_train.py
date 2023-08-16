@@ -24,7 +24,7 @@ class RunDPPTTrain(RunTrain):
         if ip["model"] is not None:
             cmd = 'dp_pt train input.json --init-model %s' % ip["model"]
         elif ip["finetune_model"] is not None:
-            cmd = 'dp_pt train --finetune %s input.json' % ip["finetune_model"]
+            cmd = 'dp_pt train --finetune %s %s input.json' % (ip["finetune_model"], ip["finetune_args"])
         else:
             cmd = 'dp_pt train input.json'
         print("Run command '%s'" % cmd)
