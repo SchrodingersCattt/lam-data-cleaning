@@ -21,7 +21,7 @@ class RunDPTrain(RunTrain):
         if ip["model"] is not None:
             cmd = 'dp train --init-frz-model %s input.json && dp freeze -o graph.pb' % ip["model"]
         elif ip["finetune_model"] is not None:
-            cmd = 'dp train --finetune %s input.json && dp freeze -o graph.pb' % ip['finetune_model']
+            cmd = 'dp train --finetune %s %s input.json && dp freeze -o graph.pb' % (ip['finetune_model'], ip["finetune_args"])
         else:
             cmd = 'dp train input.json && dp freeze -o graph.pb'
         ret = os.system(cmd)

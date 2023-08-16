@@ -79,7 +79,9 @@ class DPPTValidate(Validate):
         model_pred = infer_model(self.model, coord, cell, atype, self.type_split)
         e = model_pred["energy"].cpu().detach().numpy()
         f = model_pred["force"].cpu().detach().numpy()
-        v = model_pred["virial"].cpu().detach().numpy()
+        v = None
+        if "virial" in model_pred:
+            v = model_pred["virial"].cpu().detach().numpy()
         return e, f, v
 
 
