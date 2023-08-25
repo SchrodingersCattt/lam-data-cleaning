@@ -2,15 +2,16 @@ import os
 from pathlib import Path
 from typing import List
 
-from dflow.python import OP, OPIO, Artifact, OPIOSign
+from dflow.python import OP, OPIO, Artifact, OPIOSign, Parameter
 
 
 class Summary(OP):
     @classmethod
     def get_input_sign(cls):
         return OPIOSign({
-            "size_list": List[int],
-            "results": List[dict],
+            "size_list": Parameter(List[int], default=[]),
+            "results": Parameter(List[dict], default=[]),
+            "zero_result": Parameter(dict, default=None),
         })
 
     @classmethod
@@ -23,6 +24,11 @@ class Summary(OP):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         lcurve = {}
+        if ip["zero_result"] is not None:
+            ip["size_list"].insert(0, 1)
+            for k, v in ip["zero_result"].items():
+                lcurve[k] = lcurve.get(k, [])
+                lcurve[k].append(v)
         for res in ip["results"]:
             for k, v in res.items():
                 lcurve[k] = lcurve.get(k, [])
