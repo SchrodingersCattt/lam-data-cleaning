@@ -144,7 +144,8 @@ def build_workflow(config):
 def build_train_only_workflow(config):
     dflow.config["detect_empty_dir"] = False
     wf_name = config.get("name", "clean-data")
-    dataset = config["dataset"]
+    zero_shot = config.get("zero_shot", False)
+    dataset = config.get("dataset", None)
     dataset_artifact = get_artifact(dataset, "dataset")
     finetune_model = config.get("finetune_model", None)
     finetune_model_artifact = get_artifact(finetune_model, "finetune model")
@@ -176,6 +177,43 @@ def build_train_only_workflow(config):
     valid_executor = valid.get("executor")
     if valid_executor is not None:
         valid_executor = DispatcherExecutor(**valid_executor)
+
+    if zero_shot:
+        zero_steps = Steps("zero-shot")
+        zero_params = deepcopy(train_params)
+        zero_params["training"]["numb_steps"] = 1
+        zero_params["training"]["disp_freq"] = 1
+        zero_params["training"]["save_freq"] = 1
+        zero_params["learning_rate"]["start_lr"] = 1e-50
+        zero_params["learning_rate"]["stop_lr"] = 1e-50
+        train_step = Step(
+            "train",
+            template=PythonOPTemplate(train_op, image=train_image,
+                                    image_pull_policy=train_image_pull_policy,
+                                    python_packages=dpclean.__path__),
+            parameters={"train_params": zero_params,
+                        "finetune_args": finetune_args},
+            artifacts={"train_systems": valid_data_artifact,
+                    "valid_systems": valid_data_artifact,
+                    "finetune_model": finetune_model_artifact,
+                    "model": None},
+            executor=train_executor,
+            key="train-zero",
+        )
+        zero_steps.add(train_step)
+        valid_step = Step(
+            "validate",
+            template=PythonOPTemplate(valid_op, image=valid_image,
+                                    image_pull_policy=valid_image_pull_policy,
+                                    python_packages=dpclean.__path__),
+            artifacts={"valid_systems": valid_data_artifact,
+                    "model": train_step.outputs.artifacts["model"]},
+            executor=valid_executor,
+            key="valid-zero",
+        )
+        zero_steps.add(valid_step)
+        zero_steps.outputs.parameters["results"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["results"])
+        zero_step = Step("zero-shot", template=zero_steps)
 
     steps = Steps("train-validate")
     steps.inputs.parameters["item"] = InputParameter(type=int)
@@ -209,35 +247,48 @@ def build_train_only_workflow(config):
     steps.outputs.parameters["results"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["results"])
 
     wf = Workflow(wf_name, parameters={"input": config})
-    stat_step = Step(
-        "statistics",
-        template=PythonOPTemplate(stat_op,
-                                  image=stat_image,
-                                  image_pull_policy=stat_image_pull_policy,
-                                  python_packages=dpclean.__path__),
-        artifacts={"dataset": dataset_artifact},
-        executor=stat_executor,
-        key="statistics",
-    )
-    wf.add(stat_step)
-    train_step = Step(
-        "parallel-train",
-        template=steps,
-        parameters={"item": "{{item}}"},
-        artifacts={"train_systems": dataset_artifact},
-        slices=Slices(input_artifact=["train_systems"],
-                      output_parameter=["results"]),
-        with_param=argo_range(stat_step.outputs.parameters["n_subsets"]),
-    )
-    wf.add(train_step)
+    if dataset_artifact is not None:
+        stat_step = Step(
+            "statistics",
+            template=PythonOPTemplate(stat_op,
+                                    image=stat_image,
+                                    image_pull_policy=stat_image_pull_policy,
+                                    python_packages=dpclean.__path__),
+            artifacts={"dataset": dataset_artifact},
+            executor=stat_executor,
+            key="statistics",
+        )
+        wf.add(stat_step)
+
+        train_step = Step(
+            "parallel-train",
+            template=steps,
+            parameters={"item": "{{item}}"},
+            artifacts={"train_systems": dataset_artifact},
+            slices=Slices(input_artifact=["train_systems"],
+                        output_parameter=["results"]),
+            with_param=argo_range(stat_step.outputs.parameters["n_subsets"]),
+        )
+        if zero_shot:
+            wf.add([train_step, zero_step])
+        else:
+            wf.add(train_step)
+    elif zero_shot:
+        wf.add(zero_step)
+
+    parameters = {}
+    if dataset_artifact is not None:
+        parameters["size_list"] = stat_step.outputs.parameters["size_list"]
+        parameters["results"] = train_step.outputs.parameters["results"]
+    if zero_shot:
+        parameters["zero_result"] = zero_step.outputs.parameters["results"]
     sum_step = Step(
         "summary",
         template=PythonOPTemplate(Summary,
                                   image="dptechnology/dpdata",
                                   image_pull_policy="IfNotPresent",
                                   python_packages=dpclean.__path__),
-        parameters={"size_list": stat_step.outputs.parameters["size_list"],
-                    "results": train_step.outputs.parameters["results"]},
+        parameters=parameters,
         key="summary",
     )
     wf.add(sum_step)
