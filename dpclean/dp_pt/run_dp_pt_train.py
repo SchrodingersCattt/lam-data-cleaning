@@ -21,7 +21,9 @@ class RunDPPTTrain(RunTrain):
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
 
-        if ip["model"] is not None:
+        if os.path.exists("model.pt"):  # for restart
+            cmd = 'dp_pt train input.json --restart model.pt'
+        elif ip["model"] is not None:
             cmd = 'dp_pt train input.json --init-model %s' % ip["model"]
         elif ip["finetune_model"] is not None:
             cmd = 'dp_pt train --finetune %s %s input.json' % (ip["finetune_model"], ip["finetune_args"])
