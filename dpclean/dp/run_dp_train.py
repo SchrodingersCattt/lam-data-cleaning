@@ -15,6 +15,9 @@ class RunDPTrain(RunTrain):
         params["training"]["validation_data"]["systems"] = [
             str(s) for s in ip["valid_systems"]]
 
+        train_dir = Path("train")
+        train_dir.mkdir(exist_ok=True)
+        os.chdir("train")
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
 
@@ -24,10 +27,12 @@ class RunDPTrain(RunTrain):
             cmd = 'dp train --finetune %s %s input.json && dp freeze -o graph.pb' % (ip['finetune_model'], ip["finetune_args"])
         else:
             cmd = 'dp train input.json && dp freeze -o graph.pb'
+        print("Run command '%s'" % cmd)
         ret = os.system(cmd)
-        assert ret == 0, "Command %s failed" % cmd
+        assert ret == 0, "Command '%s' failed" % cmd
+        os.chdir("..")
 
         return OPIO({
-            "model": Path("graph.pb"),
-            "output_dir": Path("."),
+            "model": train_dir / "model.pt",
+            "output_dir": train_dir,
         })
