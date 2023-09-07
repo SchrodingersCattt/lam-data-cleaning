@@ -8,7 +8,7 @@ from typing import List, Union
 import dflow
 import dpclean
 from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
-                   Step, Steps, Workflow, argo_range, if_expression,
+                   Step, Steps, Workflow, argo_enumerate, if_expression,
                    upload_artifact)
 from dflow.plugins.datasets import DatasetsArtifact
 from dflow.plugins.dispatcher import DispatcherExecutor, update_dict
@@ -169,6 +169,8 @@ def build_train_only_workflow(config):
         train_executor = DispatcherExecutor(**train_executor)
     train_params = train["params"]
     finetune_args = train.get("finetune_args", "")
+    optional = train.get("optional_artifact", None)
+    optional_artifact = get_artifact(optional, "optional")
 
     valid = config["valid"]
     valid_op = import_func(valid["op"])
@@ -217,6 +219,7 @@ def build_train_only_workflow(config):
 
     steps = Steps("train-validate")
     steps.inputs.parameters["item"] = InputParameter(type=int)
+    steps.inputs.parameters["size"] = InputParameter(type=int)
     steps.inputs.artifacts["train_systems"] = InputArtifact()
     train_step = Step(
         "train",
@@ -228,7 +231,8 @@ def build_train_only_workflow(config):
         artifacts={"train_systems": steps.inputs.artifacts["train_systems"],
                    "valid_systems": valid_data_artifact,
                    "finetune_model": finetune_model_artifact,
-                   "model": None},
+                   "model": None,
+                   "optional_artifact": optional_artifact},
         executor=train_executor,
         key="train-%s" % steps.inputs.parameters["item"],
     )
@@ -263,11 +267,13 @@ def build_train_only_workflow(config):
         train_step = Step(
             "parallel-train",
             template=steps,
-            parameters={"item": "{{item}}"},
+            parameters={"item": "{{item.order}}",
+                        "size": "{{item.value}}"},
             artifacts={"train_systems": dataset_artifact},
-            slices=Slices(input_artifact=["train_systems"],
-                        output_parameter=["results"]),
-            with_param=argo_range(stat_step.outputs.parameters["n_subsets"]),
+            slices=Slices("{{item.order}}",
+                          input_artifact=["train_systems"],
+                          output_parameter=["results"]),
+            with_param=argo_enumerate(stat_step.outputs.parameters["size_list"]),
         )
         if zero_shot:
             wf.add([train_step, zero_step])

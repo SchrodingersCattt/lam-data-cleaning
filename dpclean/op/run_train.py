@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List
 
-from dflow.python import OP, OPIO, Artifact, OPIOSign, Parameter
+from dflow.python import OP, OPIO, Artifact, NestedDict, OPIOSign, Parameter
 
 
 class RunTrain(OP, ABC):
@@ -16,6 +16,7 @@ class RunTrain(OP, ABC):
                 "model": Artifact(Path, optional=True),
                 "train_params": dict,
                 "finetune_args": Parameter(str, default=""),
+                "optional_artifact": Artifact(NestedDict[Path], optional=True),
             }
         )
 
