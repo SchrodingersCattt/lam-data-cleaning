@@ -49,6 +49,8 @@ class RunOCPTrain(RunTrain):
             f.write(yaml.dump(params))
 
         cmd = "python -m main --mode train --config-yml input.yaml"
+        if ip["finetune_model"] is not None:
+            cmd += " --checkpoint %s" % ip["finetune_model"]
         print("Run command '%s'" % cmd)
         ret = os.system(cmd)
         assert ret == 0, "Command '%s' failed" % cmd
