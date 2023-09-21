@@ -32,8 +32,13 @@ class RunOCPTrain(RunTrain):
             os.makedirs("valid_data", exist_ok=True)
             pool.map(partial(deepmd_to_ase, outdir="valid_data", max_frames=math.ceil(1000/len(ip["valid_systems"]))), ip["valid_systems"])
 
+        if len(params["dataset"]) > 0:
+            train_dataset = params["dataset"][0]
+        else:
+            train_dataset = {}
+        train_dataset.update({"src": os.path.abspath("train_data"), "pattern": "**/*.json", "a2g_args": {"r_energy": True, "r_forces": True}})
         params["dataset"] = []
-        params["dataset"].append({"src": os.path.abspath("train_data"), "pattern": "**/*.json", "a2g_args": {"r_energy": True, "r_forces": True}})
+        params["dataset"].append(train_dataset)
         params["dataset"].append({"src": os.path.abspath("valid_data"), "pattern": "**/*.json", "a2g_args": {"r_energy": True, "r_forces": True}})
         params["dataset"].append({"src": os.path.abspath("valid_data"), "pattern": "**/*.json", "a2g_args": {"r_energy": True, "r_forces": True}})
         params["task"]["dataset"] = "ase_read_multi"

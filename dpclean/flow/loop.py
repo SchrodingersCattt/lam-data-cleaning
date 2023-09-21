@@ -146,6 +146,13 @@ def build_train_only_workflow(config):
     wf_name = config.get("name", "clean-data")
     zero_shot = config.get("zero_shot", False)
     dataset = config.get("dataset", None)
+    if isinstance(dataset, list):
+        for i, subset in enumerate(dataset):
+            path_list = []
+            for ds in subset if isinstance(subset, list) else [subset]:
+                for f in glob.glob(os.path.join(ds, "**/type.raw"), recursive=True):
+                    path_list.append(os.path.dirname(f))
+            dataset[i] = path_list
     dataset_artifact = get_artifact(dataset, "dataset")
     finetune_model = config.get("finetune_model", None)
     finetune_model_artifact = get_artifact(finetune_model, "finetune model")
