@@ -44,6 +44,11 @@ class OCPValidate(OP):
             os.makedirs("valid_data", exist_ok=True)
             pool.map(partial(deepmd_to_ase, outdir="valid_data"), ip["valid_systems"])
 
+        train_dataset = params["dataset"][0] if len(params["dataset"]) > 0 else {}
+        e_mean = train_dataset.get("target_mean", 0.0)
+        e_std = train_dataset.get("target_std", 1.0)
+        f_mean = train_dataset.get("grad_target_mean", 0.0)
+        f_std = train_dataset.get("grad_target_std", 1.0)
         params["dataset"] = []
         params["dataset"].append({"src": os.path.abspath("valid_data"), "pattern": "**/*.json", "a2g_args": {"r_energy": True, "r_forces": True}})
         params["dataset"].append({"src": os.path.abspath("valid_data"), "pattern": "**/*.json", "a2g_args": {"r_energy": True, "r_forces": True}})
@@ -78,9 +83,9 @@ class OCPValidate(OP):
         chunk_idx = [0] + list(result["chunk_idx"]) + [result["forces"].shape[0]]
         for i, id in enumerate(result["ids"]):
             j = int(id.split("_")[0])
-            e_pred = result["energy"][i]
+            e_pred = result["energy"][i] * e_std + e_mean
             e_label = energies[j]
-            f_pred = result["forces"][chunk_idx[i]:chunk_idx[i+1],:]
+            f_pred = result["forces"][chunk_idx[i]:chunk_idx[i+1],:] * f_std + f_mean
             f_label = forces[j]
             natoms = f_label.shape[0]
             sum_err_e += ((e_pred - e_label) / natoms)**2 * natoms

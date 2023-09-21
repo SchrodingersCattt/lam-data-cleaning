@@ -1,4 +1,6 @@
 import math
+import os
+import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
@@ -46,38 +48,39 @@ class Validate(OP, ABC):
         natoms = []
         for sys in systems:
             mixed_type = len(list(sys.glob("*/real_atom_types.npy"))) > 0
+            d = dpdata.MultiSystems()
             if mixed_type:
-                d = dpdata.MultiSystems()
                 d.load_systems_from_file(sys, fmt="deepmd/npy/mixed")
-                k = d[0]
             else:
                 k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
+                d.append(k)
             rmse_f_sys = []
             rmse_e_sys = []
             natoms_sys = []
-            for i in range(len(k)):
-                cell = k[i].data["cells"][0]
-                if k[i].nopbc:
-                    cell = None
-                coord = k[i].data["coords"][0]
-                force0 = k[i].data["forces"][0]
-                energy0 = k[i].data["energies"][0]
-                ori_atype = k[i].data["atom_types"]
-                anames = k[i].data["atom_names"]
-                atype = np.array([type_map.index(anames[j]) for j in ori_atype])
-                e, f, v = self.evaluate(coord, cell, atype)
+            for k in d:
+                for i in range(len(k)):
+                    cell = k[i].data["cells"][0]
+                    if k[i].nopbc:
+                        cell = None
+                    coord = k[i].data["coords"][0]
+                    force0 = k[i].data["forces"][0]
+                    energy0 = k[i].data["energies"][0]
+                    ori_atype = k[i].data["atom_types"]
+                    anames = k[i].data["atom_names"]
+                    atype = np.array([type_map.index(anames[j]) for j in ori_atype])
+                    e, f, v = self.evaluate(coord, cell, atype)
 
-                lx = 0
-                for j in range(force0.shape[0]):
-                    lx += (force0[j][0] - f[j][0]) ** 2 + \
-                            (force0[j][1] - f[j][1]) ** 2 + \
-                            (force0[j][2] - f[j][2]) ** 2
-                err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
-                err_e = abs(energy0 - e) / force0.shape[0]
-                print("System: %s frame: %s rmse_e: %s rmse_f: %s" % (sys, i, err_e, err_f))
-                rmse_f_sys.append(err_f)
-                rmse_e_sys.append(err_e)
-                natoms_sys.append(force0.shape[0])
+                    lx = 0
+                    for j in range(force0.shape[0]):
+                        lx += (force0[j][0] - f[j][0]) ** 2 + \
+                                (force0[j][1] - f[j][1]) ** 2 + \
+                                (force0[j][2] - f[j][2]) ** 2
+                    err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
+                    err_e = abs(energy0 - e) / force0.shape[0]
+                    print("System: %s frame: %s rmse_e: %s rmse_f: %s" % (sys, i, err_e, err_f))
+                    rmse_f_sys.append(err_f)
+                    rmse_e_sys.append(err_e)
+                    natoms_sys.append(force0.shape[0])
             rmse_f.append(rmse_f_sys)
             rmse_e.append(rmse_e_sys)
             natoms.append(natoms_sys)
@@ -176,12 +179,12 @@ class SelectSamples(Validate, ABC):
         if isinstance(ip["max_selected"], list):
             max_selected = ip["max_selected"][ip["iter"]] if ip["iter"] < len(ip["max_selected"]) else ip["max_selected"][-1]
         else:
-            max_selected = ip["max_selected"] 
+            max_selected = ip["max_selected"]
 
         if isinstance(ip["ratio_selected"], list):
             ratio_selected = ip["ratio_selected"][ip["iter"]] if ip["iter"] < len(ip["ratio_selected"]) else ip["ratio_selected"][-1]
         else:
-            ratio_selected = ip["ratio_selected"] 
+            ratio_selected = ip["ratio_selected"]
 
         n = len(ip["candidate_systems"])
         if ip["select_type"] == "global":
@@ -205,28 +208,55 @@ class SelectSamples(Validate, ABC):
             selected = [index[1] for index in indices if index[0] == i]
             if len(selected) > 0:
                 path = ip["candidate_systems"][i]
+                d = dpdata.MultiSystems()
                 mixed_type = len(list(path.glob("*/real_atom_types.npy"))) > 0
                 if mixed_type:
-                    d = dpdata.MultiSystems()
                     d.load_systems_from_file(path, fmt="deepmd/npy/mixed")
-                    k = d[0]
                 else:
                     k = dpdata.LabeledSystem(path, fmt="deepmd/npy")
-                frames = k.sub_system(selected)
-                root = str(path)[:str(path).find("candidate_systems") + 17]
-                target = Path("iter-%s" % ip["iter"]) / path.relative_to(root)
-                if mixed_type:
-                    frames.to_deepmd_npy_mixed(target)
-                else:
-                    frames.to_deepmd_npy(target)
-                current_systems.append(target)
-                if len(selected) < len(k):
-                    target = path
-                    remain = k.sub_system([j for j in range(len(k)) if j not in selected])
+                    d.append(k)
+                selected_systems = dpdata.MultiSystems()
+                unselected_systems = dpdata.MultiSystems()
+                cnt = 0
+                for k in d:
+                    selected_indices = [j for j in range(len(k)) if cnt+j in selected]
+                    unselected_indices = [j for j in range(len(k)) if cnt+j not in selected]
+                    if len(selected_indices) > 0:
+                        selected_systems.append(k.sub_system(selected_indices))
+                    if len(unselected_indices) > 0:
+                        unselected_systems.append(k.sub_system(unselected_indices))
+                    cnt += len(k)
+
+                target = Path("iter-%s" % ip["iter"]) / path.relative_to(ip["candidate_systems"].art_root)
+                if len(selected_systems) == 1:
                     if mixed_type:
-                        remain.to_deepmd_npy_mixed(target)
+                        selected_systems[0].to_deepmd_npy_mixed(target)
                     else:
-                        remain.to_deepmd_npy(target)
+                        selected_systems[0].to_deepmd_npy(target)
+                else:
+                    # The multisystem is loaded from one dir, thus we can safely keep one dir
+                    selected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
+                    fs = os.listdir("%s.tmp" % target)
+                    assert len(fs) == 1
+                    os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
+                    os.rmdir("%s.tmp" % target)
+                current_systems.append(target)
+
+                if len(unselected_systems) > 0:
+                    target = path
+                    shutil.rmtree(target)
+                    if len(unselected_systems) == 1:
+                        if mixed_type:
+                            unselected_systems[0].to_deepmd_npy_mixed(target)
+                        else:
+                            unselected_systems[0].to_deepmd_npy(target)
+                    else:
+                        # The multisystem is loaded from one dir, thus we can safely keep one dir
+                        unselected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
+                        fs = os.listdir("%s.tmp" % target)
+                        assert len(fs) == 1
+                        os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
+                        os.rmdir("%s.tmp" % target)
                     remaining_systems.append(target)
             else:
                 remaining_systems.append(ip["candidate_systems"][i])

@@ -1,5 +1,7 @@
 import math
+import os
 import random
+import shutil
 from pathlib import Path
 from typing import List
 
@@ -32,14 +34,14 @@ class SplitDataset(OP):
         nframes = []
         for f in ip["dataset"].rglob("**/type.raw"):
             path = f.parent
+            d = dpdata.MultiSystems()
             mixed_type = len(list(path.glob("*/real_atom_types.npy"))) > 0
             if mixed_type:
-                d = dpdata.MultiSystems()
                 d.load_systems_from_file(path, fmt="deepmd/npy/mixed")
-                k = d[0]
             else:
                 k = dpdata.LabeledSystem(path, fmt="deepmd/npy")
-            nf = k.get_nframes()
+                d.append(k)
+            nf = d.get_nframes()
             systems.append(path)
             nframes.append(nf)
 
@@ -58,28 +60,56 @@ class SplitDataset(OP):
         remaining_systems = []
         for i, path in enumerate(systems):
             selected = [index[1] for index in indices if index[0] == i]
+            d = dpdata.MultiSystems()
             mixed_type = len(list(path.glob("*/real_atom_types.npy"))) > 0
             if mixed_type:
-                d = dpdata.MultiSystems()
                 d.load_systems_from_file(path, fmt="deepmd/npy/mixed")
-                k = d[0]
             else:
                 k = dpdata.LabeledSystem(path, fmt="deepmd/npy")
-            if len(selected) > 0:
-                target = Path("init") / path.relative_to(ip["dataset"])
-                frames = k.sub_system(selected)
+                d.append(k)
+
+            selected_systems = dpdata.MultiSystems()
+            unselected_systems = dpdata.MultiSystems()
+            cnt = 0
+            for k in d:
+                selected_indices = [j for j in range(len(k)) if cnt+j in selected]
+                unselected_indices = [j for j in range(len(k)) if cnt+j not in selected]
+                if len(selected_indices) > 0:
+                    selected_systems.append(k.sub_system(selected_indices))
+                if len(unselected_indices) > 0:
+                    unselected_systems.append(k.sub_system(unselected_indices))
+                cnt += len(k)
+
+            target = Path("init") / path.relative_to(ip["dataset"])
+            if len(selected_systems) == 1:
                 if mixed_type:
-                    frames.to_deepmd_npy_mixed(target)
+                    selected_systems[0].to_deepmd_npy_mixed(target)
                 else:
-                    frames.to_deepmd_npy(target)
-                init_systems.append(target)
-            if len(selected) < len(k):
+                    selected_systems[0].to_deepmd_npy(target)
+            else:
+                # The multisystem is loaded from one dir, thus we can safely keep one dir
+                selected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
+                fs = os.listdir("%s.tmp" % target)
+                assert len(fs) == 1
+                os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
+                os.rmdir("%s.tmp" % target)
+            init_systems.append(target)
+
+            if len(unselected_systems) > 0:
                 target = path
-                remain = k.sub_system([j for j in range(len(k)) if j not in selected])
-                if mixed_type:
-                    remain.to_deepmd_npy_mixed(target)
+                shutil.rmtree(target)
+                if len(unselected_systems) == 1:
+                    if mixed_type:
+                        unselected_systems[0].to_deepmd_npy_mixed(target)
+                    else:
+                        unselected_systems[0].to_deepmd_npy(target)
                 else:
-                    remain.to_deepmd_npy(target)
+                    # The multisystem is loaded from one dir, thus we can safely keep one dir
+                    unselected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
+                    fs = os.listdir("%s.tmp" % target)
+                    assert len(fs) == 1
+                    os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
+                    os.rmdir("%s.tmp" % target)
                 remaining_systems.append(target)
 
         return OPIO({
