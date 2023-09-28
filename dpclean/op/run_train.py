@@ -25,7 +25,7 @@ class RunTrain(OP, ABC):
         return OPIOSign(
             {
                 "model": Artifact(Path),
-                "output_dir": Artifact(Path),
+                "output_files": Artifact(List[Path]),
             }
         )
 

@@ -16,7 +16,7 @@ class RunOCPTrain(RunTrain):
         return OPIOSign(
             {
                 "model": Artifact(List[Path]),
-                "output_dir": Artifact(List[Path]),
+                "output_files": Artifact(List[Path]),
             }
         )
 
@@ -63,5 +63,5 @@ class RunOCPTrain(RunTrain):
 
         return OPIO({
             "model": [checkpoint, Path("input.yaml")] + extra_files,
-            "output_dir": [Path("checkpoints"), Path("logs"), Path("results")],
+            "output_files": [Path("checkpoints"), Path("logs"), Path("results")],
         })
