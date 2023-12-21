@@ -12,7 +12,7 @@ from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
                    upload_artifact)
 from dflow.plugins.datasets import DatasetsArtifact
 from dflow.plugins.dispatcher import DispatcherExecutor, update_dict
-from dflow.python import PythonOPTemplate, Slices
+from dflow.python import PythonOPTemplate, Slices, upload_packages
 from dpclean.op import SplitDataset, Summary
 
 
@@ -62,7 +62,8 @@ class ActiveLearning(Steps):
                         "threshold": self.inputs.parameters["threshold"],
                         "learning_curve": self.inputs.parameters["learning_curve"],
                         "select_type": self.inputs.parameters["select_type"],
-                        "ratio_selected": self.inputs.parameters["ratio_selected"]},
+                        "ratio_selected": self.inputs.parameters["ratio_selected"],
+                        "train_params": self.inputs.parameters["train_params"]},
             artifacts={"current_systems": self.inputs.artifacts["current_systems"],
                        "candidate_systems": self.inputs.artifacts["candidate_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -134,6 +135,7 @@ def get_artifact(urn, name="data", detect_systems=False):
 
 
 def build_workflow(config):
+    upload_packages.extend(config.get("upload_packages", []))
     task = config.get("task", "active_learning")
     if task == "active_learning":
         return build_active_learning_workflow(config)
@@ -158,6 +160,9 @@ def build_train_only_workflow(config):
     finetune_model_artifact = get_artifact(finetune_model, "finetune model")
     valid_data = config["valid_data"]
     valid_data_artifact = get_artifact(valid_data, "validation data", True)
+    old_data = config.get("old_data", None)
+    old_data_artifact = get_artifact(old_data, "old data", True)
+    old_ratio = config.get("old_ratio", 0.0)
 
     stat = config.get("statistics", {})
     stat_op = import_func(stat.get("op", "dpclean.op.Statistics"))
@@ -193,19 +198,26 @@ def build_train_only_workflow(config):
         zero_params["training"]["numb_steps"] = 1
         zero_params["training"]["disp_freq"] = 1
         zero_params["training"]["save_freq"] = 1
-        zero_params["learning_rate"]["start_lr"] = 1e-50
-        zero_params["learning_rate"]["stop_lr"] = 1e-50
+        zero_params["learning_rate"]["start_lr"] = 1e-10
+        zero_params["learning_rate"]["stop_lr"] = 1e-10
+        zero_params["learning_rate"]["decay_steps"] = 1
         train_step = Step(
             "train",
             template=PythonOPTemplate(train_op, image=train_image,
                                     image_pull_policy=train_image_pull_policy,
                                     python_packages=dpclean.__path__),
-            parameters={"train_params": zero_params,
-                        "finetune_args": finetune_args},
-            artifacts={"train_systems": valid_data_artifact,
-                    "valid_systems": valid_data_artifact,
-                    "finetune_model": finetune_model_artifact,
-                    "model": None},
+            parameters={
+                "train_params": zero_params,
+                "finetune_args": finetune_args,
+                "old_ratio": old_ratio,
+            },
+            artifacts={
+                "train_systems": valid_data_artifact,
+                "valid_systems": valid_data_artifact,
+                "finetune_model": finetune_model_artifact,
+                "model": None,
+                "old_systems": old_data_artifact,
+            },
             executor=train_executor,
             key="train-zero",
         )
@@ -215,6 +227,7 @@ def build_train_only_workflow(config):
             template=PythonOPTemplate(valid_op, image=valid_image,
                                     image_pull_policy=valid_image_pull_policy,
                                     python_packages=dpclean.__path__),
+            parameters={"train_params": zero_params},
             artifacts={"valid_systems": valid_data_artifact,
                     "model": train_step.outputs.artifacts["model"]},
             executor=valid_executor,
@@ -233,13 +246,19 @@ def build_train_only_workflow(config):
         template=PythonOPTemplate(train_op, image=train_image,
                                   image_pull_policy=train_image_pull_policy,
                                   python_packages=dpclean.__path__),
-        parameters={"train_params": train_params,
-                    "finetune_args": finetune_args},
-        artifacts={"train_systems": steps.inputs.artifacts["train_systems"],
-                   "valid_systems": valid_data_artifact,
-                   "finetune_model": finetune_model_artifact,
-                   "model": None,
-                   "optional_artifact": optional_artifact},
+        parameters={
+            "train_params": train_params,
+            "finetune_args": finetune_args,
+            "old_ratio": old_ratio,
+        },
+        artifacts={
+            "train_systems": steps.inputs.artifacts["train_systems"],
+            "valid_systems": valid_data_artifact,
+            "finetune_model": finetune_model_artifact,
+            "model": None,
+            "optional_artifact": optional_artifact,
+            "old_systems": old_data_artifact,
+        },
         executor=train_executor,
         key="train-%s" % steps.inputs.parameters["item"],
     )
@@ -249,6 +268,7 @@ def build_train_only_workflow(config):
         template=PythonOPTemplate(valid_op, image=valid_image,
                                   image_pull_policy=valid_image_pull_policy,
                                   python_packages=dpclean.__path__),
+        parameters={"train_params": train_params},
         artifacts={"valid_systems": valid_data_artifact,
                    "model": train_step.outputs.artifacts["model"]},
         executor=valid_executor,
