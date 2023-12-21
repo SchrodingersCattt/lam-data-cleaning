@@ -19,7 +19,7 @@ class DPValidate(Validate):
         if cell is not None:
             cell = cell.reshape([1, -1])
         e, f, v = self.dp.eval(coord, cell, atype)
-        return e[0], f[0], v[0]
+        return e[0], f[0], v[0].reshape([3, 3])
 
 
 class DPSelectSamples(SelectSamples, DPValidate):

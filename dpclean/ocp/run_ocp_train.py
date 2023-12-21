@@ -43,6 +43,7 @@ class RunOCPTrain(RunTrain):
         params["dataset"].append({"src": os.path.abspath("valid_data"), "pattern": "**/*.json", "a2g_args": {"r_energy": True, "r_forces": True}})
         params["task"]["dataset"] = "ase_read_multi"
         params["optim"]["max_epochs"] = int(params["optim"]["max_epochs"])
+        params["optim"]["eval_every"] = int(params["optim"]["eval_every"])
 
         extra_files = []
         if ip["optional_artifact"] is not None and "scale_file" in ip["optional_artifact"]:

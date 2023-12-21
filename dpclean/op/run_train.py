@@ -17,6 +17,8 @@ class RunTrain(OP, ABC):
                 "train_params": dict,
                 "finetune_args": Parameter(str, default=""),
                 "optional_artifact": Artifact(NestedDict[Path], optional=True),
+                "old_systems": Artifact(List[Path], optional=True),
+                "old_ratio": Parameter(float, default=0.0),
             }
         )
 

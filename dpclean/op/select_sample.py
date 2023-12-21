@@ -9,8 +9,6 @@ import dpdata
 import numpy as np
 from dflow.python import OP, OPIO, Artifact, OPIOSign, Parameter
 
-type_map = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og"]
-
 
 class Validate(OP, ABC):
     @classmethod
@@ -19,6 +17,7 @@ class Validate(OP, ABC):
             {
                 "valid_systems": Artifact(List[Path]),
                 "model": Artifact(Path),
+                "train_params": dict,
             }
         )
 
@@ -42,9 +41,10 @@ class Validate(OP, ABC):
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
-    def validate(self, systems):
+    def validate(self, systems, type_map):
         rmse_f = []
         rmse_e = []
+        rmse_v = []
         natoms = []
         for sys in systems:
             mixed_type = len(list(sys.glob("*/real_atom_types.npy"))) > 0
@@ -56,6 +56,7 @@ class Validate(OP, ABC):
                 d.append(k)
             rmse_f_sys = []
             rmse_e_sys = []
+            rmse_v_sys = []
             natoms_sys = []
             for k in d:
                 for i in range(len(k)):
@@ -65,6 +66,7 @@ class Validate(OP, ABC):
                     coord = k[i].data["coords"][0]
                     force0 = k[i].data["forces"][0]
                     energy0 = k[i].data["energies"][0]
+                    virial0 = k[i].data["virials"][0] if "virials" in k[i].data else None
                     ori_atype = k[i].data["atom_types"]
                     anames = k[i].data["atom_names"]
                     atype = np.array([type_map.index(anames[j]) for j in ori_atype])
@@ -77,23 +79,30 @@ class Validate(OP, ABC):
                                 (force0[j][2] - f[j][2]) ** 2
                     err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
                     err_e = abs(energy0 - e) / force0.shape[0]
-                    print("System: %s frame: %s rmse_e: %s rmse_f: %s" % (sys, i, err_e, err_f))
+                    err_v = np.sqrt(np.average((virial0 - v)**2)) / force0.shape[0] if virial0 is not None else None
+                    print("System: %s frame: %s rmse_e: %s rmse_f: %s rmse_v: %s" % (sys, i, err_e, err_f, err_v))
                     rmse_f_sys.append(err_f)
                     rmse_e_sys.append(err_e)
+                    if err_v is not None:
+                        rmse_v_sys.append(err_v)
                     natoms_sys.append(force0.shape[0])
             rmse_f.append(rmse_f_sys)
             rmse_e.append(rmse_e_sys)
+            if len(rmse_v_sys) > 0:
+                rmse_v.append(rmse_v_sys)
             natoms.append(natoms_sys)
-        return rmse_f, rmse_e, natoms
+        return rmse_f, rmse_e, rmse_v if len(rmse_v) > 0 else None, natoms
 
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, natoms = self.validate(ip["valid_systems"])
+        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"]["model"]["type_map"])
         na = sum([sum(i) for i in natoms])
+        nf = sum([len(i) for i in natoms])
         rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
-        rmse_e = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_e, natoms)]) / na)
-        results = {"rmse_f": float(rmse_f), "rmse_e": float(rmse_e)}
+        rmse_e = np.sqrt(sum([sum([i**2 for i in r]) for r in rmse_e]) / nf)
+        rmse_v = float(np.sqrt(np.average(np.concatenate(rmse_v)**2))) if rmse_v is not None else None
+        results = {"rmse_f": float(rmse_f), "rmse_e": float(rmse_e), "rmse_v": rmse_v}
         return OPIO({
             "results": results,
         })
@@ -114,6 +123,7 @@ class SelectSamples(Validate, ABC):
                 "learning_curve": dict,
                 "select_type": Parameter(str, default="global"),
                 "ratio_selected": Union[float, List[float]],
+                "train_params": dict,
             }
         )
 
@@ -133,10 +143,12 @@ class SelectSamples(Validate, ABC):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, natoms = self.validate(ip["valid_systems"])
+        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"]["model"]["type_map"])
         na = sum([sum(i) for i in natoms])
+        nf = sum([len(i) for i in natoms])
         rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
-        rmse_e = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_e, natoms)]) / na)
+        rmse_e = np.sqrt(sum([sum([i**2 for i in r]) for r in rmse_e]) / nf)
+        rmse_v = float(np.sqrt(np.average(np.concatenate(rmse_v)**2))) if rmse_v is not None else None
         n_current = 0
         for sys in ip["current_systems"]:
             k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
@@ -148,8 +160,11 @@ class SelectSamples(Validate, ABC):
         lcurve["rmse_f"].append(float(rmse_f))
         lcurve["rmse_e"] = lcurve.get("rmse_e", [])
         lcurve["rmse_e"].append(float(rmse_e))
+        if rmse_v is not None:
+            lcurve["rmse_v"] = lcurve.get("rmse_v", [])
+            lcurve["rmse_v"].append(rmse_v)
 
-        rmse_f, _, _ = self.validate(ip["candidate_systems"])
+        rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"]["model"]["type_map"])
         nf = sum([len(i) for i in rmse_f])
         if nf == 0:
             return OPIO({
