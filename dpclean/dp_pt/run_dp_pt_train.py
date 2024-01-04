@@ -1,7 +1,9 @@
 import glob
 import json
+import math
 import os
 
+import dpdata
 from dflow.python import OP, OPIO
 from dpclean.op import RunTrain
 from pathlib import Path
@@ -22,14 +24,14 @@ class RunDPPTTrain(RunTrain):
             n_all = n_old + len(ip["train_params"])
             old_ratio = ip["old_ratio"]
             params["training"]["auto_prob_style"] = "prob_sys_size; 0:%s:%s; %s:%s:%s" % (n_old, old_ratio, n_old, n_all, 1-old_ratio)
-        params["training"]["numb_steps"] = int(params["training"]["numb_steps"])
-        params["learning_rate"]["decay_steps"] = int(params["learning_rate"]["decay_steps"])
-        if params["training"]["numb_steps"] > 1000000:
-            params["training"]["numb_steps"] = 1000000
-        if params["learning_rate"]["decay_steps"] < 1:
-            params["learning_rate"]["decay_steps"] = 1
-        if params["learning_rate"]["decay_steps"] > 5000:
-            params["learning_rate"]["decay_steps"] = 5000
+        nf = 0
+        for sys in ip["train_systems"]:
+            k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
+            nf += len(k)
+        if isinstance(params["training"]["numb_steps"], str):
+            params["training"]["numb_steps"] = eval(params["training"]["numb_steps"], {"n": nf, "math": math})
+        if isinstance(params["learning_rate"]["decay_steps"], str):
+            params["learning_rate"]["decay_steps"] = eval(params["learning_rate"]["decay_steps"], {"n": nf, "math": math})
 
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
@@ -39,8 +41,8 @@ class RunDPPTTrain(RunTrain):
             cmd = 'dp_pt train input.json --restart %s' % checkpoint
         elif ip["model"] is not None:
             cmd = 'dp_pt train input.json --init-model %s' % ip["model"]
-        elif ip["finetune_model"] is not None:
-            cmd = 'dp_pt train --finetune %s %s input.json' % (ip["finetune_model"], ip["finetune_args"])
+        elif ip["pretrained_model"] is not None:
+            cmd = 'dp_pt train --finetune %s %s input.json' % (ip["pretrained_model"], ip["finetune_args"])
         else:
             cmd = 'dp_pt train input.json'
         print("Run command '%s'" % cmd)

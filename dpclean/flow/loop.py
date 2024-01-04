@@ -23,8 +23,6 @@ class ActiveLearning(Steps):
                  resume_train_params=None, finetune_args=""):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
-        self.inputs.parameters["max_selected"] = InputParameter(type=Union[int, List[int]])
-        self.inputs.parameters["threshold"] = InputParameter(type=float)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
         self.inputs.parameters["learning_curve"] = InputParameter(type=dict)
         self.inputs.parameters["select_type"] = InputParameter(type=str)
@@ -32,7 +30,7 @@ class ActiveLearning(Steps):
         self.inputs.artifacts["candidate_systems"] = InputArtifact()
         self.inputs.artifacts["current_systems"] = InputArtifact()
         self.inputs.artifacts["valid_systems"] = InputArtifact()
-        self.inputs.artifacts["finetune_model"] = InputArtifact()
+        self.inputs.artifacts["pretrained_model"] = InputArtifact()
         self.inputs.artifacts["model"] = InputArtifact()
         self.outputs.parameters["learning_curve"] = OutputParameter(type=dict)
 
@@ -45,7 +43,7 @@ class ActiveLearning(Steps):
                         "finetune_args": finetune_args},
             artifacts={"train_systems": self.inputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
-                       "finetune_model": self.inputs.artifacts["finetune_model"],
+                       "pretrained_model": self.inputs.artifacts["pretrained_model"],
                        "model": self.inputs.artifacts["model"]},
             executor=train_executor,
             key="iter-%s-train" % self.inputs.parameters["iter"],
@@ -57,9 +55,7 @@ class ActiveLearning(Steps):
             template=PythonOPTemplate(select_op, image=select_image,
                                       image_pull_policy=select_image_pull_policy,
                                       python_packages=dpclean.__path__),
-            parameters={"max_selected": self.inputs.parameters["max_selected"],
-                        "iter": self.inputs.parameters["iter"],
-                        "threshold": self.inputs.parameters["threshold"],
+            parameters={"iter": self.inputs.parameters["iter"],
                         "learning_curve": self.inputs.parameters["learning_curve"],
                         "select_type": self.inputs.parameters["select_type"],
                         "ratio_selected": self.inputs.parameters["ratio_selected"],
@@ -81,8 +77,6 @@ class ActiveLearning(Steps):
             "next-loop",
             template=self,
             parameters={"iter": self.inputs.parameters["iter"] + 1,
-                        "max_selected": self.inputs.parameters["max_selected"],
-                        "threshold": self.inputs.parameters["threshold"],
                         "train_params": train_params,
                         "learning_curve": select_step.outputs.parameters["learning_curve"],
                         "select_type": self.inputs.parameters["select_type"],
@@ -90,7 +84,7 @@ class ActiveLearning(Steps):
             artifacts={"candidate_systems": select_step.outputs.artifacts["remaining_systems"],
                        "current_systems": select_step.outputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
-                       "finetune_model": self.inputs.artifacts["finetune_model"],
+                       "pretrained_model": self.inputs.artifacts["pretrained_model"],
                        "model": train_step.outputs.artifacts["model"]
                        if resume else None},
             when="%s > 0" % select_step.outputs.parameters["n_selected"],
@@ -156,8 +150,8 @@ def build_train_only_workflow(config):
                     path_list.append(os.path.dirname(f))
             dataset[i] = path_list
     dataset_artifact = get_artifact(dataset, "dataset")
-    finetune_model = config.get("finetune_model", None)
-    finetune_model_artifact = get_artifact(finetune_model, "finetune model")
+    pretrained_model = config.get("pretrained_model", config.get("finetune_model"))
+    pretrained_model_artifact = get_artifact(pretrained_model, "finetune model")
     valid_data = config["valid_data"]
     valid_data_artifact = get_artifact(valid_data, "validation data", True)
     old_data = config.get("old_data", None)
@@ -214,7 +208,7 @@ def build_train_only_workflow(config):
             artifacts={
                 "train_systems": valid_data_artifact,
                 "valid_systems": valid_data_artifact,
-                "finetune_model": finetune_model_artifact,
+                "pretrained_model": pretrained_model_artifact,
                 "model": None,
                 "old_systems": old_data_artifact,
             },
@@ -229,7 +223,7 @@ def build_train_only_workflow(config):
                                     python_packages=dpclean.__path__),
             parameters={"train_params": zero_params},
             artifacts={"valid_systems": valid_data_artifact,
-                    "model": train_step.outputs.artifacts["model"]},
+                       "model": train_step.outputs.artifacts["model"]},
             executor=valid_executor,
             key="valid-zero",
         )
@@ -254,7 +248,7 @@ def build_train_only_workflow(config):
         artifacts={
             "train_systems": steps.inputs.artifacts["train_systems"],
             "valid_systems": valid_data_artifact,
-            "finetune_model": finetune_model_artifact,
+            "pretrained_model": pretrained_model_artifact,
             "model": None,
             "optional_artifact": optional_artifact,
             "old_systems": old_data_artifact,
@@ -330,13 +324,13 @@ def build_train_only_workflow(config):
 def build_active_learning_workflow(config):
     dflow.config["detect_empty_dir"] = False
     wf_name = config.get("name", "clean-data")
+    zero_shot = config.get("zero_shot", False)
     dataset = config["dataset"]
     init_data = config.get("init_data", None)
-    n_init = config.get("n_init", None)
     ratio_init = config.get("ratio_init", None)
     select_type = config.get("select_type", "global")
     valid_data = config["valid_data"]
-    finetune_model = config.get("finetune_model", None)
+    pretrained_model = config.get("pretrained_model", config.get("pretrained_model"))
     resume = config.get("resume", True)
     split = config.get("split", {})
     select = config["select"]
@@ -359,9 +353,7 @@ def build_active_learning_workflow(config):
     select_executor = select.get("executor")
     if select_executor is not None:
         select_executor = DispatcherExecutor(**select_executor)
-    max_selected = select.get("max_selected", None)
     ratio_selected = select.get("ratio_selected", None)
-    threshold = select["threshold"]
 
     train_op = import_func(train["op"])
     train_image = train["image"]
@@ -385,9 +377,7 @@ def build_active_learning_workflow(config):
         template=PythonOPTemplate(split_op, image=split_image,
                                   image_pull_policy=split_image_pull_policy,
                                   python_packages=dpclean.__path__),
-        parameters={"n_init": n_init if init_data is None else 0,
-                    "ratio_init": ratio_init if init_data is None else 0.0,
-                    "select_type": select_type},
+        parameters={"ratio_init": ratio_init if init_data is None else 0.0},
         artifacts={"dataset": dataset_artifact,
                    "init_systems": init_data_artifact},
         executor=split_executor,
@@ -400,21 +390,69 @@ def build_active_learning_workflow(config):
         select_image_pull_policy, train_image_pull_policy, select_executor,
         train_executor, resume, resume_train_params, finetune_args)
 
-    finetune_model_artifact = get_artifact(finetune_model, "finetune model")
+    pretrained_model_artifact = get_artifact(pretrained_model, "finetune model")
     valid_data_artifact = get_artifact(valid_data, "validation data", True)
     loop_step = Step(
         "active-learning-loop",
         template=active_learning,
-        parameters={"max_selected": max_selected,
-                    "threshold": threshold,
-                    "train_params": train_params,
+        parameters={"train_params": train_params,
                     "learning_curve": {},
                     "select_type": select_type,
                     "ratio_selected": ratio_selected},
         artifacts={"current_systems": split_step.outputs.artifacts["init_systems"],
                    "candidate_systems": split_step.outputs.artifacts["systems"],
                    "valid_systems": valid_data_artifact,
-                   "finetune_model": finetune_model_artifact,
+                   "pretrained_model": pretrained_model_artifact,
                    "model": None})
-    wf.add(loop_step)
+
+    if zero_shot:
+        zero_steps = Steps("zero-shot")
+        zero_params = deepcopy(train_params)
+        zero_params["training"]["numb_steps"] = 1
+        zero_params["training"]["disp_freq"] = 1
+        zero_params["training"]["save_freq"] = 1
+        zero_params["learning_rate"]["start_lr"] = 1e-10
+        zero_params["learning_rate"]["stop_lr"] = 1e-10
+        zero_params["learning_rate"]["decay_steps"] = 1
+        train_step = Step(
+            "train",
+            template=PythonOPTemplate(train_op, image=train_image,
+                                      image_pull_policy=train_image_pull_policy,
+                                      python_packages=dpclean.__path__),
+            parameters={
+                "train_params": zero_params,
+                "finetune_args": finetune_args,
+            },
+            artifacts={
+                "train_systems": valid_data_artifact,
+                "valid_systems": valid_data_artifact,
+                "pretrained_model": pretrained_model_artifact,
+                "model": None,
+            },
+            executor=train_executor,
+            key="train-zero",
+        )
+        zero_steps.add(train_step)
+        valid_step = Step(
+            "validate",
+            template=PythonOPTemplate(select_op, image=select_image,
+                                      image_pull_policy=select_image_pull_policy,
+                                      python_packages=dpclean.__path__),
+            parameters={"iter": 0,
+                        "learning_curve": {},
+                        "ratio_selected": 0.0,
+                        "train_params": zero_params},
+            artifacts={"current_systems": upload_artifact([]),
+                       "candidate_systems": upload_artifact([]),
+                       "valid_systems": valid_data_artifact,
+                       "model": train_step.outputs.artifacts["model"]},
+            executor=select_executor,
+            key="valid-zero",
+        )
+        zero_steps.add(valid_step)
+        zero_steps.outputs.parameters["learning_curve"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["learning_curve"])
+        zero_step = Step("zero-shot", template=zero_steps)
+        wf.add([zero_step, loop_step])
+    else:
+        wf.add(loop_step)
     return wf

@@ -12,7 +12,7 @@ class RunTrain(OP, ABC):
             {
                 "train_systems": Artifact(List[Path]),
                 "valid_systems": Artifact(List[Path]),
-                "finetune_model": Artifact(Path, optional=True),
+                "pretrained_model": Artifact(Path, optional=True),
                 "model": Artifact(Path, optional=True),
                 "train_params": dict,
                 "finetune_args": Parameter(str, default=""),
