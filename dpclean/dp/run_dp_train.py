@@ -1,6 +1,8 @@
 import json
+import math
 import os
 
+import dpdata
 from dflow.python import OP, OPIO
 from dpclean.op import RunTrain
 from pathlib import Path
@@ -21,8 +23,14 @@ class RunDPTrain(RunTrain):
             n_all = n_old + len(ip["train_params"])
             old_ratio = ip["old_ratio"]
             params["training"]["auto_prob_style"] = "prob_sys_size; 0:%s:%s; %s:%s:%s" % (n_old, old_ratio, n_old, n_all, 1-old_ratio)
-        params["training"]["numb_steps"] = int(params["training"]["numb_steps"])
-        params["learning_rate"]["decay_steps"] = int(params["learning_rate"]["decay_steps"])
+        nf = 0
+        for sys in ip["train_systems"]:
+            k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
+            nf += len(k)
+        if isinstance(params["training"]["numb_steps"], str):
+            params["training"]["numb_steps"] = eval(params["training"]["numb_steps"], {"n": nf, "math": math})
+        if isinstance(params["learning_rate"]["decay_steps"], str):
+            params["learning_rate"]["decay_steps"] = eval(params["learning_rate"]["decay_steps"], {"n": nf, "math": math})
 
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
@@ -31,8 +39,8 @@ class RunDPTrain(RunTrain):
             cmd = 'dp train --restart model.ckpt input.json'
         elif ip["model"] is not None:
             cmd = 'dp train --init-frz-model %s input.json && dp freeze -o graph.pb' % ip["model"]
-        elif ip["finetune_model"] is not None:
-            cmd = 'dp train --finetune %s %s input.json && dp freeze -o graph.pb' % (ip['finetune_model'], ip["finetune_args"])
+        elif ip["pretrained_model"] is not None:
+            cmd = 'dp train --finetune %s %s input.json && dp freeze -o graph.pb' % (ip['pretrained_model'], ip["finetune_args"])
         else:
             cmd = 'dp train input.json && dp freeze -o graph.pb'
         print("Run command '%s'" % cmd)

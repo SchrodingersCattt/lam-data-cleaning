@@ -1,5 +1,6 @@
 import math
 import os
+import random
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -54,11 +55,11 @@ class Validate(OP, ABC):
             else:
                 k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
                 d.append(k)
-            rmse_f_sys = []
-            rmse_e_sys = []
-            rmse_v_sys = []
-            natoms_sys = []
             for k in d:
+                rmse_f_sys = []
+                rmse_e_sys = []
+                rmse_v_sys = []
+                natoms_sys = []
                 for i in range(len(k)):
                     cell = k[i].data["cells"][0]
                     if k[i].nopbc:
@@ -86,11 +87,11 @@ class Validate(OP, ABC):
                     if err_v is not None:
                         rmse_v_sys.append(err_v)
                     natoms_sys.append(force0.shape[0])
-            rmse_f.append(rmse_f_sys)
-            rmse_e.append(rmse_e_sys)
-            if len(rmse_v_sys) > 0:
-                rmse_v.append(rmse_v_sys)
-            natoms.append(natoms_sys)
+                rmse_f.append(rmse_f_sys)
+                rmse_e.append(rmse_e_sys)
+                if len(rmse_v_sys) > 0:
+                    rmse_v.append(rmse_v_sys)
+                natoms.append(natoms_sys)
         return rmse_f, rmse_e, rmse_v if len(rmse_v) > 0 else None, natoms
 
     @OP.exec_sign_check
@@ -117,9 +118,7 @@ class SelectSamples(Validate, ABC):
                 "candidate_systems": Artifact(List[Path]),
                 "valid_systems": Artifact(List[Path]),
                 "model": Artifact(Path),
-                "max_selected": Union[int, List[int]],
                 "iter": int,
-                "threshold": float,
                 "learning_curve": dict,
                 "select_type": Parameter(str, default="global"),
                 "ratio_selected": Union[float, List[float]],
@@ -135,7 +134,6 @@ class SelectSamples(Validate, ABC):
                 "current_systems": Artifact(List[Path]),
                 "n_selected": int,
                 "n_remaining": int,
-                "converged": bool,
                 "learning_curve": dict,
             }
         )
@@ -172,90 +170,74 @@ class SelectSamples(Validate, ABC):
                 "current_systems": ip["current_systems"],
                 "n_selected": 0,
                 "n_remaining": 0,
-                "converged": False,
                 "learning_curve": lcurve,
             })
-        f_max = max([max(i) for i in rmse_f if len(i) > 0])
-        f_avg = sum([sum(i) for i in rmse_f]) / nf
-        f_min = min([min(i) for i in rmse_f if len(i) > 0])
-        print('max force (eV/A): ', f_max)
-        print('avg force (eV/A): ', f_avg)
-        print('min force (eV/A): ', f_min)
-        if f_max - f_avg <= ip["threshold"] * f_avg:
-            return OPIO({
-                "remaining_systems": ip["candidate_systems"],
-                "current_systems": ip["current_systems"],
-                "n_selected": 0,
-                "n_remaining": nf,
-                "converged": True,
-                "learning_curve": lcurve,
-            })
-
-        if isinstance(ip["max_selected"], list):
-            max_selected = ip["max_selected"][ip["iter"]] if ip["iter"] < len(ip["max_selected"]) else ip["max_selected"][-1]
-        else:
-            max_selected = ip["max_selected"]
 
         if isinstance(ip["ratio_selected"], list):
             ratio_selected = ip["ratio_selected"][ip["iter"]] if ip["iter"] < len(ip["ratio_selected"]) else ip["ratio_selected"][-1]
         else:
             ratio_selected = ip["ratio_selected"]
 
-        n = len(ip["candidate_systems"])
+        indices = [[] for _ in range(len(rmse_f))]
         if ip["select_type"] == "global":
             mapping = sum([[(i, j) for j in range(len(s))] for i, s in enumerate(rmse_f)], [])
             rmse_f_1d = sum(rmse_f, [])
             sorted_indices = [int(i) for i in np.argsort(rmse_f_1d)]
             sorted_indices.reverse()
-            indices = [mapping[sorted_indices[i]] for i in range(min(len(sorted_indices), max_selected))]
+            ns = math.floor(len(sorted_indices) * ratio_selected)
+            if random.random() < len(sorted_indices) * ratio_selected - ns:
+                ns += 1
+            for i in range(ns):
+                indices[mapping[sorted_indices[i]][0]].append(mapping[sorted_indices[i]][1])
         elif ip["select_type"] == "system":
-            indices = []
-            for i in range(n):
+            for i in range(len(rmse_f)):
                 if len(rmse_f[i]) > 0:
-                    ns = math.ceil(len(rmse_f[i])*ratio_selected)
+                    ns = math.floor(len(rmse_f[i]) * ratio_selected)
+                    if random.random() < len(rmse_f[i]) * ratio_selected - ns:
+                        ns += 1
                     sorted_indices = [int(j) for j in np.argsort(rmse_f[i])]
                     sorted_indices.reverse()
-                    indices.extend([(i, sorted_indices[j]) for j in range(ns)])
+                    for j in range(ns):
+                        indices[i].append(sorted_indices[j])
+        n_selected = sum([len(i) for i in indices])
 
         current_systems = ip["current_systems"]
         remaining_systems = []
-        for i in range(n):
-            selected = [index[1] for index in indices if index[0] == i]
-            if len(selected) > 0:
-                path = ip["candidate_systems"][i]
-                d = dpdata.MultiSystems()
-                mixed_type = len(list(path.glob("*/real_atom_types.npy"))) > 0
-                if mixed_type:
-                    d.load_systems_from_file(path, fmt="deepmd/npy/mixed")
-                else:
-                    k = dpdata.LabeledSystem(path, fmt="deepmd/npy")
-                    d.append(k)
-                selected_systems = dpdata.MultiSystems()
-                unselected_systems = dpdata.MultiSystems()
-                cnt = 0
-                for k in d:
-                    selected_indices = [j for j in range(len(k)) if cnt+j in selected]
-                    unselected_indices = [j for j in range(len(k)) if cnt+j not in selected]
-                    if len(selected_indices) > 0:
-                        selected_systems.append(k.sub_system(selected_indices))
-                    if len(unselected_indices) > 0:
-                        unselected_systems.append(k.sub_system(unselected_indices))
-                    cnt += len(k)
+        i = 0
+        for path in ip["candidate_systems"]:
+            d = dpdata.MultiSystems()
+            mixed_type = len(list(path.glob("*/real_atom_types.npy"))) > 0
+            if mixed_type:
+                d.load_systems_from_file(path, fmt="deepmd/npy/mixed")
+            else:
+                k = dpdata.LabeledSystem(path, fmt="deepmd/npy")
+                d.append(k)
+            selected_systems = dpdata.MultiSystems()
+            unselected_systems = dpdata.MultiSystems()
+            for k in d:
+                selected_indices = indices[i]
+                unselected_indices = list(set(range(len(k))).difference(indices[i]))
+                i += 1
+                if len(selected_indices) > 0:
+                    selected_systems.append(k.sub_system(selected_indices))
+                if len(unselected_indices) > 0:
+                    unselected_systems.append(k.sub_system(unselected_indices))
 
-                target = Path("iter-%s" % ip["iter"]) / path.relative_to(ip["candidate_systems"].art_root)
-                if len(selected_systems) == 1:
-                    if mixed_type:
-                        selected_systems[0].to_deepmd_npy_mixed(target)
+                if len(selected_systems) > 0:
+                    target = Path("iter-%s" % ip["iter"]) / path.relative_to(ip["candidate_systems"].art_root)
+                    if len(selected_systems) == 1:
+                        if mixed_type:
+                            selected_systems[0].to_deepmd_npy_mixed(target)
+                        else:
+                            selected_systems[0].to_deepmd_npy(target)
                     else:
-                        selected_systems[0].to_deepmd_npy(target)
-                else:
-                    # The multisystem is loaded from one dir, thus we can safely keep one dir
-                    selected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
-                    fs = os.listdir("%s.tmp" % target)
-                    assert len(fs) == 1
-                    os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
-                    os.rmdir("%s.tmp" % target)
-                current_systems.append(target)
+                        # The multisystem is loaded from one dir, thus we can safely keep one dir
+                        selected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
+                        fs = os.listdir("%s.tmp" % target)
+                        assert len(fs) == 1
+                        os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
+                        os.rmdir("%s.tmp" % target)
+                    current_systems.append(target)
 
                 if len(unselected_systems) > 0:
                     target = path
@@ -273,14 +255,11 @@ class SelectSamples(Validate, ABC):
                         os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
                         os.rmdir("%s.tmp" % target)
                     remaining_systems.append(target)
-            else:
-                remaining_systems.append(ip["candidate_systems"][i])
 
         return OPIO({
                 "remaining_systems": remaining_systems,
                 "current_systems": current_systems,
-                "n_selected": len(indices),
-                "n_remaining": nf - len(indices),
-                "converged": False,
+                "n_selected": n_selected,
+                "n_remaining": nf - n_selected,
                 "learning_curve": lcurve,
             })
