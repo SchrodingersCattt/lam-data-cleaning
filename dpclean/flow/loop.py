@@ -27,6 +27,7 @@ class ActiveLearning(Steps):
         self.inputs.parameters["learning_curve"] = InputParameter(type=dict)
         self.inputs.parameters["select_type"] = InputParameter(type=str)
         self.inputs.parameters["ratio_selected"] = InputParameter(type=Union[float, List[float]])
+        self.inputs.parameters["batch_size"] = InputParameter(type=str, value="auto")
         self.inputs.artifacts["candidate_systems"] = InputArtifact()
         self.inputs.artifacts["current_systems"] = InputArtifact()
         self.inputs.artifacts["valid_systems"] = InputArtifact()
@@ -59,7 +60,8 @@ class ActiveLearning(Steps):
                         "learning_curve": self.inputs.parameters["learning_curve"],
                         "select_type": self.inputs.parameters["select_type"],
                         "ratio_selected": self.inputs.parameters["ratio_selected"],
-                        "train_params": self.inputs.parameters["train_params"]},
+                        "train_params": self.inputs.parameters["train_params"],
+                        "batch_size": self.inputs.parameters["batch_size"]},
             artifacts={"current_systems": self.inputs.artifacts["current_systems"],
                        "candidate_systems": self.inputs.artifacts["candidate_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -80,7 +82,8 @@ class ActiveLearning(Steps):
                         "train_params": train_params,
                         "learning_curve": select_step.outputs.parameters["learning_curve"],
                         "select_type": self.inputs.parameters["select_type"],
-                        "ratio_selected": self.inputs.parameters["ratio_selected"]},
+                        "ratio_selected": self.inputs.parameters["ratio_selected"],
+                        "batch_size": self.inputs.parameters["batch_size"]},
             artifacts={"candidate_systems": select_step.outputs.artifacts["remaining_systems"],
                        "current_systems": select_step.outputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -179,6 +182,7 @@ def build_train_only_workflow(config):
     optional_artifact = get_artifact(optional, "optional")
 
     valid = config["valid"]
+    batch_size = valid.get("batch_size", "auto")
     valid_op = import_func(valid["op"])
     valid_image = valid["image"]
     valid_image_pull_policy = valid.get("image_pull_policy")
@@ -221,7 +225,8 @@ def build_train_only_workflow(config):
             template=PythonOPTemplate(valid_op, image=valid_image,
                                     image_pull_policy=valid_image_pull_policy,
                                     python_packages=dpclean.__path__),
-            parameters={"train_params": zero_params},
+            parameters={"train_params": zero_params,
+                        "batch_size": batch_size},
             artifacts={"valid_systems": valid_data_artifact,
                        "model": train_step.outputs.artifacts["model"]},
             executor=valid_executor,
@@ -262,7 +267,8 @@ def build_train_only_workflow(config):
         template=PythonOPTemplate(valid_op, image=valid_image,
                                   image_pull_policy=valid_image_pull_policy,
                                   python_packages=dpclean.__path__),
-        parameters={"train_params": train_params},
+        parameters={"train_params": train_params,
+                    "batch_size": batch_size},
         artifacts={"valid_systems": valid_data_artifact,
                    "model": train_step.outputs.artifacts["model"]},
         executor=valid_executor,
@@ -354,6 +360,7 @@ def build_active_learning_workflow(config):
     if select_executor is not None:
         select_executor = DispatcherExecutor(**select_executor)
     ratio_selected = select.get("ratio_selected", None)
+    batch_size = select.get("batch_size", "auto")
 
     train_op = import_func(train["op"])
     train_image = train["image"]
@@ -398,7 +405,8 @@ def build_active_learning_workflow(config):
         parameters={"train_params": train_params,
                     "learning_curve": {},
                     "select_type": select_type,
-                    "ratio_selected": ratio_selected},
+                    "ratio_selected": ratio_selected,
+                    "batch_size": batch_size},
         artifacts={"current_systems": split_step.outputs.artifacts["init_systems"],
                    "candidate_systems": split_step.outputs.artifacts["systems"],
                    "valid_systems": valid_data_artifact,
@@ -441,7 +449,8 @@ def build_active_learning_workflow(config):
             parameters={"iter": 0,
                         "learning_curve": {},
                         "ratio_selected": 0.0,
-                        "train_params": zero_params},
+                        "train_params": zero_params,
+                        "batch_size": batch_size},
             artifacts={"current_systems": upload_artifact([]),
                        "candidate_systems": upload_artifact([]),
                        "valid_systems": valid_data_artifact,
