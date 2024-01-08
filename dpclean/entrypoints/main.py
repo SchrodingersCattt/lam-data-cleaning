@@ -79,11 +79,11 @@ def main():
             if task == "train":
                 reused_steps = [s for s in reused_steps
                                 if (s.key.startswith("iter-") and int(s.key.split("-")[1]) < iter)
-                                or s.key == "split-dataset"]
+                                or not s.key.startswith("iter-")]
             elif task == "select":
                 reused_steps = [s for s in reused_steps
                                 if (s.key.startswith("iter-") and int(s.key.split("-")[1]) < iter)
-                                or s.key in ["split-dataset", "iter-%s-train" % iter]]
+                                or s.key == "iter-%s-train" % iter or not s.key.startswith("iter-")]
         with open(args.CONFIG, "r") as f:
             config = json.load(f)
         wf = build_workflow(config)

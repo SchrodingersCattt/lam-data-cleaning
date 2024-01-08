@@ -19,6 +19,7 @@ class Validate(OP, ABC):
                 "valid_systems": Artifact(List[Path]),
                 "model": Artifact(Path),
                 "train_params": dict,
+                "batch_size": Parameter(str, default="auto"),
             }
         )
 
@@ -42,7 +43,7 @@ class Validate(OP, ABC):
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
-    def validate(self, systems, type_map):
+    def validate(self, systems, type_map, batch_size):
         rmse_f = []
         rmse_e = []
         rmse_v = []
@@ -97,7 +98,7 @@ class Validate(OP, ABC):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"]["model"]["type_map"])
+        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"]["model"]["type_map"], batch_size=ip["batch_size"])
         na = sum([sum(i) for i in natoms])
         nf = sum([len(i) for i in natoms])
         rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
@@ -123,6 +124,7 @@ class SelectSamples(Validate, ABC):
                 "select_type": Parameter(str, default="global"),
                 "ratio_selected": Union[float, List[float]],
                 "train_params": dict,
+                "batch_size": Parameter(str, default="auto"),
             }
         )
 
@@ -141,7 +143,7 @@ class SelectSamples(Validate, ABC):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"]["model"]["type_map"])
+        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"]["model"]["type_map"], batch_size=ip["batch_size"])
         na = sum([sum(i) for i in natoms])
         nf = sum([len(i) for i in natoms])
         rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
@@ -162,7 +164,7 @@ class SelectSamples(Validate, ABC):
             lcurve["rmse_v"] = lcurve.get("rmse_v", [])
             lcurve["rmse_v"].append(rmse_v)
 
-        rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"]["model"]["type_map"])
+        rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"]["model"]["type_map"], batch_size=ip["batch_size"])
         nf = sum([len(i) for i in rmse_f])
         if nf == 0:
             return OPIO({
@@ -212,6 +214,7 @@ class SelectSamples(Validate, ABC):
             else:
                 k = dpdata.LabeledSystem(path, fmt="deepmd/npy")
                 d.append(k)
+
             selected_systems = dpdata.MultiSystems()
             unselected_systems = dpdata.MultiSystems()
             for k in d:
@@ -223,38 +226,38 @@ class SelectSamples(Validate, ABC):
                 if len(unselected_indices) > 0:
                     unselected_systems.append(k.sub_system(unselected_indices))
 
-                if len(selected_systems) > 0:
-                    target = Path("iter-%s" % ip["iter"]) / path.relative_to(ip["candidate_systems"].art_root)
-                    if len(selected_systems) == 1:
-                        if mixed_type:
-                            selected_systems[0].to_deepmd_npy_mixed(target)
-                        else:
-                            selected_systems[0].to_deepmd_npy(target)
+            if len(selected_systems) > 0:
+                target = Path("iter-%s" % ip["iter"]) / path.relative_to(ip["candidate_systems"].art_root)
+                if len(selected_systems) == 1:
+                    if mixed_type:
+                        selected_systems[0].to_deepmd_npy_mixed(target)
                     else:
-                        # The multisystem is loaded from one dir, thus we can safely keep one dir
-                        selected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
-                        fs = os.listdir("%s.tmp" % target)
-                        assert len(fs) == 1
-                        os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
-                        os.rmdir("%s.tmp" % target)
-                    current_systems.append(target)
+                        selected_systems[0].to_deepmd_npy(target)
+                else:
+                    # The multisystem is loaded from one dir, thus we can safely keep one dir
+                    selected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
+                    fs = os.listdir("%s.tmp" % target)
+                    assert len(fs) == 1
+                    os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
+                    os.rmdir("%s.tmp" % target)
+                current_systems.append(target)
 
-                if len(unselected_systems) > 0:
-                    target = path
-                    shutil.rmtree(target)
-                    if len(unselected_systems) == 1:
-                        if mixed_type:
-                            unselected_systems[0].to_deepmd_npy_mixed(target)
-                        else:
-                            unselected_systems[0].to_deepmd_npy(target)
+            if len(unselected_systems) > 0:
+                target = path
+                shutil.rmtree(target)
+                if len(unselected_systems) == 1:
+                    if mixed_type:
+                        unselected_systems[0].to_deepmd_npy_mixed(target)
                     else:
-                        # The multisystem is loaded from one dir, thus we can safely keep one dir
-                        unselected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
-                        fs = os.listdir("%s.tmp" % target)
-                        assert len(fs) == 1
-                        os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
-                        os.rmdir("%s.tmp" % target)
-                    remaining_systems.append(target)
+                        unselected_systems[0].to_deepmd_npy(target)
+                else:
+                    # The multisystem is loaded from one dir, thus we can safely keep one dir
+                    unselected_systems.to_deepmd_npy_mixed("%s.tmp" % target)
+                    fs = os.listdir("%s.tmp" % target)
+                    assert len(fs) == 1
+                    os.rename(os.path.join("%s.tmp" % target, fs[0]), target)
+                    os.rmdir("%s.tmp" % target)
+                remaining_systems.append(target)
 
         return OPIO({
                 "remaining_systems": remaining_systems,
