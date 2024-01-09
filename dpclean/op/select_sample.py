@@ -31,11 +31,9 @@ class Validate(OP, ABC):
             }
         )
 
-    @abstractmethod
     def load_model(self, model: Path):
         pass
 
-    @abstractmethod
     def evaluate(self,
                  coord: np.ndarray,
                  cell: Optional[np.ndarray],
@@ -43,7 +41,7 @@ class Validate(OP, ABC):
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
-    def validate(self, systems, type_map, batch_size):
+    def validate(self, systems, train_params, batch_size):
         rmse_f = []
         rmse_e = []
         rmse_v = []
@@ -71,7 +69,7 @@ class Validate(OP, ABC):
                     virial0 = k[i].data["virials"][0] if "virials" in k[i].data else None
                     ori_atype = k[i].data["atom_types"]
                     anames = k[i].data["atom_names"]
-                    atype = np.array([type_map.index(anames[j]) for j in ori_atype])
+                    atype = np.array([train_params["model"]["type_map"].index(anames[j]) for j in ori_atype])
                     e, f, v = self.evaluate(coord, cell, atype)
 
                     lx = 0
@@ -98,7 +96,7 @@ class Validate(OP, ABC):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"]["model"]["type_map"], batch_size=ip["batch_size"])
+        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"])
         na = sum([sum(i) for i in natoms])
         nf = sum([len(i) for i in natoms])
         rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
@@ -143,7 +141,7 @@ class SelectSamples(Validate, ABC):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"]["model"]["type_map"], batch_size=ip["batch_size"])
+        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"])
         na = sum([sum(i) for i in natoms])
         nf = sum([len(i) for i in natoms])
         rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
@@ -164,7 +162,7 @@ class SelectSamples(Validate, ABC):
             lcurve["rmse_v"] = lcurve.get("rmse_v", [])
             lcurve["rmse_v"].append(rmse_v)
 
-        rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"]["model"]["type_map"], batch_size=ip["batch_size"])
+        rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"], batch_size=ip["batch_size"])
         nf = sum([len(i) for i in rmse_f])
         if nf == 0:
             return OPIO({

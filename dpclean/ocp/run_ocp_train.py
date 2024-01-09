@@ -1,25 +1,16 @@
+import json
 import math
 import os
 from functools import partial
 from pathlib import Path
-from typing import List
 
-from dflow.python import OP, OPIO, Artifact, OPIOSign
+from dflow.python import OP, OPIO
 from dpclean.op import RunTrain
 
 from .utils import deepmd_to_ase
 
 
 class RunOCPTrain(RunTrain):
-    @classmethod
-    def get_output_sign(cls):
-        return OPIOSign(
-            {
-                "model": Artifact(List[Path]),
-                "output_files": Artifact(List[Path]),
-            }
-        )
-
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         import multiprocessing
@@ -45,12 +36,11 @@ class RunOCPTrain(RunTrain):
         params["optim"]["max_epochs"] = int(params["optim"]["max_epochs"])
         params["optim"]["eval_every"] = int(params["optim"]["eval_every"])
 
-        extra_files = []
-        if ip["optional_artifact"] is not None and "scale_file" in ip["optional_artifact"]:
-            scale_file = ip["optional_artifact"]["scale_file"]
-            scale_file.rename(scale_file.name)
-            params["model"]["scale_file"] = scale_file.name
-            extra_files.append(Path(scale_file.name))
+        if "scale_dict" in params:
+            with open("scale.json", "w") as f:
+                json.dump(params.pop("scale_dict"), f, indent=4)
+            params["model"]["scale_file"] = "scale.json"
+
         with open("input.yaml", "w") as f:
             f.write(yaml.dump(params))
 
@@ -63,6 +53,6 @@ class RunOCPTrain(RunTrain):
         checkpoint = Path("checkpoints") / max(os.listdir("checkpoints")) / "checkpoint.pt"
 
         return OPIO({
-            "model": [checkpoint, Path("input.yaml")] + extra_files,
+            "model": checkpoint,
             "output_files": [Path("checkpoints"), Path("logs"), Path("results")],
         })

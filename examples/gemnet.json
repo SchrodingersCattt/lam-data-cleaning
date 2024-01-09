@@ -1,0 +1,145 @@
+{
+    "name": "ferroele-gemnet",
+    "task": "train_only",
+    "dataset": "oss://11881/11176/store/upload/wangh-v1.2-downstream/Domains/FerroEle/random_split.tgz",
+    "valid_data": "oss://11881/11176/store/upload/wangh-v1.2-downstream/Domains/FerroEle/valid.tgz",
+    "valid": {
+        "op": "dpclean.ocp.OCPValidate",
+        "image": "registry.dp.tech/dptech/prod-11106/ocp:1102",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "paratera",
+                        "scass_type": "1 * NVIDIA V100_32g"
+                    }
+                }
+            }
+        }
+    },
+    "train": {
+        "op": "dpclean.ocp.RunOCPTrain",
+        "image": "registry.dp.tech/dptech/prod-11106/ocp:1102",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "paratera",
+                        "scass_type": "1 * NVIDIA V100_32g"
+                    }
+                }
+            }
+        },
+        "params": {
+            "trainer": "forces",
+            "dataset": [
+                {
+                    "normalize_labels": true,
+                    "target_mean": -31368.730744805078,
+                    "target_std": 2053.772392357283,
+                    "grad_target_mean": 0.0,
+                    "grad_target_std": 1.0
+                }
+            ],
+            "logger": "tensorboard",
+            "task": {
+              "dataset": "ase_read_multi",
+              "description": "Regressing to energies and forces for DFT trajectories from OCP",
+              "type": "regression",
+              "metric": "mae",
+              "labels": [
+                "potential energy"
+              ],
+              "grad_input": "atomic forces",
+              "train_on_free_atoms": true,
+              "eval_on_free_atoms": true
+            },
+            "model": {
+              "name": "gemnet_t",
+              "num_spherical": 7,
+              "num_radial": 128,
+              "num_blocks": 3,
+              "emb_size_atom": 512,
+              "emb_size_edge": 512,
+              "emb_size_trip": 64,
+              "emb_size_rbf": 16,
+              "emb_size_cbf": 16,
+              "emb_size_bil_trip": 64,
+              "num_before_skip": 1,
+              "num_after_skip": 2,
+              "num_concat": 1,
+              "num_atom": 3,
+              "cutoff": 6.0,
+              "max_neighbors": 50,
+              "rbf": {
+                "name": "gaussian"
+              },
+              "envelope": {
+                "name": "polynomial",
+                "exponent": 5
+              },
+              "cbf": {
+                "name": "spherical_harmonics"
+              },
+              "extensive": true,
+              "otf_graph": false,
+              "output_init": "HeOrthogonal",
+              "activation": "silu",
+              "regress_forces": true,
+              "direct_forces": true
+            },
+            "optim": {
+              "batch_size": 1,
+              "eval_batch_size": 1,
+              "eval_every": 40,
+              "num_workers": 2,
+              "lr_initial": 0.0005,
+              "optimizer": "AdamW",
+              "optimizer_params": {
+                "amsgrad": true
+              },
+              "scheduler": "ReduceLROnPlateau",
+              "mode": "min",
+              "factor": 0.8,
+              "patience": 3,
+              "max_epochs": 1,
+              "force_coefficient": 100,
+              "energy_coefficient": 1,
+              "ema_decay": 0.999,
+              "clip_grad_norm": 10,
+              "loss_energy": "mae",
+              "loss_force": "l2mae"
+            },
+            "scale_dict": {
+                "comment": "tri_gaussian128",
+                "TripInteraction_1_had_rbf": 18.873615264892578,
+                "TripInteraction_1_sum_cbf": 7.996850490570068,
+                "AtomUpdate_1_sum": 1.220463752746582,
+                "TripInteraction_2_had_rbf": 16.10817527770996,
+                "TripInteraction_2_sum_cbf": 7.614634037017822,
+                "AtomUpdate_2_sum": 0.9690994620323181,
+                "TripInteraction_3_had_rbf": 15.01930046081543,
+                "TripInteraction_3_sum_cbf": 7.025179862976074,
+                "AtomUpdate_3_sum": 0.8903237581253052,
+                "OutBlock_0_sum": 1.6437848806381226,
+                "OutBlock_0_had": 16.161039352416992,
+                "OutBlock_1_sum": 1.1077653169631958,
+                "OutBlock_1_had": 13.54678726196289,
+                "OutBlock_2_sum": 0.9477927684783936,
+                "OutBlock_2_had": 12.754337310791016,
+                "OutBlock_3_sum": 0.9059251546859741,
+                "OutBlock_3_had": 13.484951972961426
+            }
+        }
+    }
+}

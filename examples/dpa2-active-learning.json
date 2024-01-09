@@ -1,16 +1,16 @@
 {
-    "name": "semi-conductor",
-    "dataset": "oss://11881/11176/store/upload/ed6f934a-6dda-4d02-b679-82a7c3277f70/tmpy4nup4y6.tgz",
-    "valid_data": "oss://11881/11176/store/upload/0af95beb-8648-46d8-9066-88b44a86532f/tmpqibz2yqq.tgz",
-    "resume": true,
-    "select_type": "system",
+    "name": "electrolyte",
+    "dataset": "oss://11881/11176/store/upload/32e36da3-6d35-4d61-8567-2ab260b070aa/tmpzgjx248x.tgz",
+    "valid_data": "oss://11881/11176/store/upload/576fcd1e-3b6d-4d6f-96c6-1c93e3b9ade1/tmpb4hj_bg9.tgz",
+    "zero_shot": true,
     "ratio_init": 0.001,
     "split": {
         "image_pull_policy": "IfNotPresent"
     },
     "select": {
+        "ratio_selected": [0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.33, 1.0],
         "op": "dpclean.dp_pt.DPPTSelectSamples",
-        "image": "registry.dp.tech/dplc/deepmd-pytorch:latest",
+        "image": "registry.dp.tech/dplc/deepmd-pytorch:9622b",
         "image_pull_policy": "IfNotPresent",
         "executor": {
             "image_pull_policy": "IfNotPresent",
@@ -20,18 +20,18 @@
                 "remote_profile": {
                     "input_data": {
                         "job_type": "container",
-                        "platform": "ali",
-                        "scass_type": "c8_m31_1 * NVIDIA T4"
+                        "platform": "paratera",
+                        "scass_type": "c10_m38_1 * NVIDIA V100",
+                        "maxRescheduleTimes": 10
                     }
                 }
-            }
-        },
-        "ratio_selected": [0.001, 0.002, 0.002, 0.004, 0.004, 0.008, 0.008, 0.016, 0.016, 0.032, 0.032],
-        "threshold": 0.0000000020
+            },
+            "retry_on_submission_error": 10
+        }
     },
     "train": {
         "op": "dpclean.dp_pt.RunDPPTTrain",
-        "image": "registry.dp.tech/dplc/deepmd-pytorch:latest",
+        "image": "registry.dp.tech/dplc/deepmd-pytorch:9622b",
         "image_pull_policy": "IfNotPresent",
         "executor": {
             "image_pull_policy": "IfNotPresent",
@@ -41,48 +41,21 @@
                 "remote_profile": {
                     "input_data": {
                         "job_type": "container",
-                        "platform": "ali",
-                        "scass_type": "c8_m31_1 * NVIDIA T4"
+                        "platform": "paratera",
+                        "scass_type": "c10_m38_1 * NVIDIA V100",
+                        "maxRescheduleTimes": 10
                     }
                 }
-            }
+            },
+            "retry_on_submission_error": 10
         },
         "params": {
             "model": {
-                "descriptor": {
-                    "type": "se_atten",
-                    "sel": 80,
-                    "rcut_smth": 2.0,
-                    "rcut": 9.0,
+                "type_embedding": {
                     "neuron": [
-                        25,
-                        50,
-                        100
+                        8
                     ],
-                    "resnet_dt": false,
-                    "axis_neuron": 12,
-                    "seed": 1,
-                    "attn": 128,
-                    "attn_layer": 0,
-                    "attn_dotr": true,
-                    "attn_mask": false,
-                    "post_ln": true,
-                    "ffn": false,
-                    "ffn_embed_dim": 1024,
-                    "activation": "tanh",
-                    "scaling_factor": 1.0,
-                    "head_num": 1,
-                    "normalize": true,
-                    "temperature": 1.0
-                },
-                "fitting_net": {
-                    "neuron": [
-                        240,
-                        240,
-                        240
-                    ],
-                    "resnet_dt": true,
-                    "seed": 1
+                    "tebd_input_mode": "concat"
                 },
                 "type_map": [
                     "H",
@@ -203,35 +176,114 @@
                     "Lv",
                     "Ts",
                     "Og"
-                ]
+                ],
+                "descriptor": {
+                    "type": "hybrid",
+                    "hybrid_mode": "sequential",
+                    "list": [
+                        {
+                            "type": "se_atten",
+                            "sel": 120,
+                            "rcut_smth": 8.0,
+                            "rcut": 9.0,
+                            "neuron": [
+                                25,
+                                50,
+                                100
+                            ],
+                            "resnet_dt": false,
+                            "axis_neuron": 12,
+                            "seed": 1,
+                            "attn": 128,
+                            "attn_layer": 0,
+                            "attn_dotr": true,
+                            "attn_mask": false,
+                            "post_ln": true,
+                            "ffn": false,
+                            "ffn_embed_dim": 1024,
+                            "activation": "tanh",
+                            "scaling_factor": 1.0,
+                            "head_num": 1,
+                            "normalize": true,
+                            "temperature": 1.0,
+                            "add": "concat",
+                            "pre_add": true,
+                            "_comment": " that's all"
+                        },
+                        {
+                            "type": "se_uni",
+                            "sel": 40,
+                            "rcut_smth": 3.5,
+                            "rcut": 4.0,
+                            "nlayers": 12,
+                            "g1_dim": 128,
+                            "g2_dim": 32,
+                            "attn2_hidden": 32,
+                            "attn2_nhead": 4,
+                            "attn1_hidden": 128,
+                            "attn1_nhead": 4,
+                            "axis_dim": 4,
+                            "update_h2": false,
+                            "update_g1_has_conv": true,
+                            "update_g1_has_grrg": true,
+                            "update_g1_has_drrd": true,
+                            "update_g1_has_attn": true,
+                            "update_g2_has_g1g1": true,
+                            "update_g2_has_attn": true,
+                            "attn2_has_gate": true,
+                            "add_type_ebd_to_seq": false,
+                            "smooth": true,
+                            "_comment": " that's all"
+                        }
+                    ]
+                },
+                "fitting_net": {
+                    "neuron": [
+                        240,
+                        240,
+                        240
+                    ],
+                    "resnet_dt": true,
+                    "seed": 1,
+                    "_comment": " that's all"
+                },
+                "_comment": " that's all"
             },
             "learning_rate": {
                 "type": "exp",
-                "start_lr": 0.001,
-                "decay_steps": 5000,
-                "stop_lr": 3.51e-08
+                "decay_steps": "math.ceil(0.0765*n)",
+                "start_lr": 0.0002,
+                "stop_lr": 3.51e-08,
+                "_comment": "that's all"
             },
             "loss": {
+                "type": "ener",
                 "start_pref_e": 0.02,
                 "limit_pref_e": 1,
                 "start_pref_f": 1000,
                 "limit_pref_f": 1,
                 "start_pref_v": 0,
-                "limit_pref_v": 0
+                "limit_pref_v": 0,
+                "_comment": " that's all"
             },
             "training": {
                 "training_data": {
-                    "batch_size": 1
+                    "batch_size": 1,
+                    "_comment": "that's all"
                 },
                 "validation_data": {
-                    "batch_size": 1
+                    "batch_size": 1,
+                    "_comment": "that's all"
                 },
-                "numb_steps": 100000,
+                "numb_steps": "math.ceil(15.3*n)",
+                "warmup_steps": 0,
+                "gradient_max_norm": 5.0,
                 "seed": 1,
                 "disp_file": "lcurve.out",
                 "disp_freq": 100,
-                "save_freq": 1000
+                "save_freq": 2000,
+                "_comment": "that's all"
             }
-        }        
+        }
     }
 }
