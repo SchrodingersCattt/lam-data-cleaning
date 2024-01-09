@@ -3,7 +3,7 @@ requires = ["setuptools>=61", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dpa-data-cleaning"
+name = "lam-data-cleaning"
 dynamic = ["version"]
 description = "Data cleaning"
 authors = [
@@ -23,7 +23,7 @@ readme = "README.md"
 keywords = ["data cleaning"]
 
 [project.urls]
-repository = "https://github.com/smc-lucky/dpa-data-cleaning"
+repository = "https://github.com/zjgemi/lam-data-cleaning"
 
 [project.scripts]
 dpclean = "dpclean.entrypoints.main:main"
