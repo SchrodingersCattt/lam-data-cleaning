@@ -3,7 +3,7 @@
     "task": "train_only",
     "dataset": "oss://11881/11176/store/upload/wangh-v1.2-downstream/Domains/FerroEle/random_split.tgz",
     "valid_data": "oss://11881/11176/store/upload/wangh-v1.2-downstream/Domains/FerroEle/valid.tgz",
-    "finetune_model": "oss://11881/11176/store/upload/pretrained_models/20231120_100w.pt",
+    "pretrained_model": "oss://11881/11176/store/upload/pretrained_models/20231120_100w.pt",
     "zero_shot": true,
     "valid": {
         "op": "dpclean.dp_pt.DPPTValidate",
