@@ -178,8 +178,6 @@ def build_train_only_workflow(config):
         train_executor = DispatcherExecutor(**train_executor)
     train_params = train["params"]
     finetune_args = train.get("finetune_args", "")
-    optional = train.get("optional_artifact", None)
-    optional_artifact = get_artifact(optional, "optional")
 
     valid = config["valid"]
     batch_size = valid.get("batch_size", "auto")
@@ -255,7 +253,6 @@ def build_train_only_workflow(config):
             "valid_systems": valid_data_artifact,
             "pretrained_model": pretrained_model_artifact,
             "model": None,
-            "optional_artifact": optional_artifact,
             "old_systems": old_data_artifact,
         },
         executor=train_executor,

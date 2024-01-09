@@ -1,0 +1,136 @@
+{
+    "name": "ferroele-equiformer",
+    "task": "train_only",
+    "dataset": "oss://11881/11176/store/upload/wangh-v1.2-downstream/Domains/FerroEle/random_split.tgz",
+    "valid_data": "oss://11881/11176/store/upload/wangh-v1.2-downstream/Domains/FerroEle/valid.tgz",
+    "valid": {
+        "op": "dpclean.ocp.OCPValidate",
+        "image": "registry.dp.tech/dptech/prod-11106/ocp:1102",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "paratera",
+                        "scass_type": "1 * NVIDIA V100_32g"
+                    }
+                }
+            }
+        }
+    },
+    "train": {
+        "op": "dpclean.ocp.RunOCPTrain",
+        "image": "registry.dp.tech/dptech/prod-11106/ocp:1102",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "paratera",
+                        "scass_type": "1 * NVIDIA V100_32g"
+                    }
+                }
+            }
+        },
+        "params": {
+            "trainer": "equiformerv2_forces",
+            "dataset": [
+                {
+                    "normalize_labels": true,
+                    "target_mean": -31368.730744805078,
+                    "target_std": 2053.772392357283,
+                    "grad_target_mean": 0.0,
+                    "grad_target_std": 1.0
+                }
+            ],
+            "logger": "tensorboard",
+            "task": {
+              "dataset": "ase_read_multi",
+              "description": "Regressing to energies and forces for DFT trajectories from OCP",
+              "type": "regression",
+              "metric": "mae",
+              "labels": [
+                "potential energy"
+              ],
+              "grad_input": "atomic forces",
+              "train_on_free_atoms": true,
+              "eval_on_free_atoms": true
+            },
+            "model": {
+              "name": "equiformer_v2",
+              "use_pbc": true,
+              "regress_forces": true,
+              "otf_graph": true,
+              "max_neighbors": 20,
+              "max_radius": 12.0,
+              "max_num_elements": 90,
+              "num_layers": 12,
+              "sphere_channels": 128,
+              "attn_hidden_channels": 64,
+              "num_heads": 8,
+              "attn_alpha_channels": 64,
+              "attn_value_channels": 16,
+              "ffn_hidden_channels": 128,
+              "norm_type": "layer_norm_sh",
+              "lmax_list": [
+                6
+              ],
+              "mmax_list": [
+                2
+              ],
+              "grid_resolution": 18,
+              "num_sphere_samples": 128,
+              "edge_channels": 128,
+              "use_atom_edge_embedding": true,
+              "share_atom_edge_embedding": false,
+              "distance_function": "gaussian",
+              "num_distance_basis": 512,
+              "attn_activation": "silu",
+              "use_s2_act_attn": false,
+              "use_attn_renorm": true,
+              "ffn_activation": "silu",
+              "use_gate_act": false,
+              "use_grid_mlp": true,
+              "use_sep_s2_act": true,
+              "alpha_drop": 0.1,
+              "drop_path_rate": 0.05,
+              "proj_drop": 0.0,
+              "weight_init": "uniform"
+            },
+            "optim": {
+              "batch_size": 1,
+              "eval_batch_size": 1,
+              "eval_every": 40,
+              "load_balancing": "atoms",
+              "num_workers": 1,
+              "lr_initial": 0.0004,
+              "optimizer": "AdamW",
+              "optimizer_params": {
+                "weight_decay": 0.001
+              },
+              "scheduler": "LambdaLR",
+              "scheduler_params": {
+                "lambda_type": "cosine",
+                "warmup_factor": 0.2,
+                "warmup_epochs": 0.1,
+                "lr_min_factor": 0.01
+              },
+              "max_epochs": 1,
+              "force_coefficient": 100,
+              "energy_coefficient": 2,
+              "clip_grad_norm": 100,
+              "ema_decay": 0.999,
+              "loss_energy": "mae",
+              "loss_force": "l2mae"
+            }
+        }
+    }
+}
