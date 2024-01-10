@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 
-def deepmd_to_ase(sys: Path, outdir: str, max_frames=None):
+def deepmd_to_ase(sys: Path, outdir: str, max_frames=None, energy_bias=None):
     import ase
     import dpdata
 
@@ -23,6 +23,8 @@ def deepmd_to_ase(sys: Path, outdir: str, max_frames=None):
         k.data["cells"] = k.data["cells"].astype(float)
         k.data["coords"] = k.data["coords"].astype(float)
         k.data["energies"] = k.data["energies"].astype(float)
+        if energy_bias is not None:
+            k.data["energies"] -= sum([energy_bias.get(a, 0.0)*n for a, n in zip(k["atom_names"], k["atom_numbs"]) if n > 0])
         k.data["forces"] = k.data["forces"].astype(float)
         if max_frames is not None:
             k.shuffle()

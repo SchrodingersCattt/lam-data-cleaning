@@ -15,8 +15,9 @@
                 "remote_profile": {
                     "input_data": {
                         "job_type": "container",
-                        "platform": "paratera",
-                        "scass_type": "1 * NVIDIA V100_32g"
+                        "platform": "ali",
+                        "scass_type": "c12_m92_1 * NVIDIA V100",
+                        "on_demand": 1
                     }
                 }
             }
@@ -34,23 +35,15 @@
                 "remote_profile": {
                     "input_data": {
                         "job_type": "container",
-                        "platform": "paratera",
-                        "scass_type": "1 * NVIDIA V100_32g"
+                        "platform": "ali",
+                        "scass_type": "c12_m92_1 * NVIDIA V100",
+                        "on_demand": 1
                     }
                 }
             }
         },
         "params": {
             "trainer": "forces",
-            "dataset": [
-                {
-                    "normalize_labels": true,
-                    "target_mean": -31368.730744805078,
-                    "target_std": 2053.772392357283,
-                    "grad_target_mean": 0.0,
-                    "grad_target_std": 1.0
-                }
-            ],
             "logger": "tensorboard",
             "task": {
               "dataset": "ase_read_multi",

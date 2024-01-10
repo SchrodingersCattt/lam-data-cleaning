@@ -20,20 +20,20 @@ class OCPValidate(Validate):
         import numpy as np
         import yaml
 
-        checkpoint = self.model
-        params = train_params
-        if "scale_dict" in params:
-            with open("scale.json", "w") as f:
-                json.dump(params.pop("scale_dict"), f, indent=4)
-            params["model"]["scale_file"] = "scale.json"
+        with open(self.model / "input.yaml", "r") as f:
+            params = yaml.full_load(f.read())
+        if os.path.isfile(self.model / "scale.json"):
+            shutil.copy(self.model / "scale.json", "scale.json")
+        with open(self.model / "bias.json", "r") as f:
+            energy_bias = json.load(f)
 
         if os.path.isdir("valid_data"):
             shutil.rmtree("valid_data")
         with multiprocessing.Pool() as pool:
             os.makedirs("valid_data", exist_ok=True)
-            pool.map(partial(deepmd_to_ase, outdir="valid_data"), systems)
+            pool.map(partial(deepmd_to_ase, outdir="valid_data", energy_bias=energy_bias), systems)
 
-        valid_dataset = params["dataset"][0] if len(params["dataset"]) > 0 else {}
+        valid_dataset = params["dataset"][0] if len(params.get("dataset", [])) > 0 else {}
         valid_dataset.update({"src": os.path.abspath("valid_data"), "pattern": "**/*.json", "a2g_args": {"r_energy": True, "r_forces": True}})
         params["dataset"] = []
         params["dataset"].append(valid_dataset)
@@ -45,7 +45,7 @@ class OCPValidate(Validate):
         with open("input.yaml", "w") as f:
             f.write(yaml.dump(params))
 
-        cmd = "python -m main --mode predict --config-yml input.yaml --checkpoint %s" % checkpoint
+        cmd = "python -m main --mode predict --config-yml input.yaml --checkpoint %s/checkpoint.pt" % self.model
         print("Run command '%s'" % cmd)
         ret = os.system(cmd)
         assert ret == 0, "Command '%s' failed" % cmd

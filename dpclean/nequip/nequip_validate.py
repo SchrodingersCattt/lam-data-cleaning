@@ -13,22 +13,27 @@ class NequipValidate(Validate):
         self.model = model
 
     def validate(self, systems, train_params, batch_size):
+        import json
         import multiprocessing
 
         import ase
-        import dpdata
         import numpy as np
         import yaml
 
+        with open(self.model / "bias.json", "r") as f:
+            energy_bias = json.load(f)
         if os.path.isdir("valid_data"):
             shutil.rmtree("valid_data")
         with multiprocessing.Pool() as pool:
             os.makedirs("valid_data", exist_ok=True)
-            pool.map(partial(deepmd_to_xyz, outdir="valid_data"), systems)
+            pool.map(partial(deepmd_to_xyz, outdir="valid_data", energy_bias=energy_bias), systems)
         with open("valid.xyz", "w") as fw:
             for sys in systems:
-                with open("valid_data/%s.xyz" % sys, "r") as fr:
-                    fw.write(fr.read())
+                i = 0
+                while os.path.isfile("valid_data/%s_%s.xyz" % (sys, i)):
+                    with open("valid_data/%s_%s.xyz" % (sys, i), "r") as fr:
+                        fw.write(fr.read())
+                    i += 1
 
         params = train_params
         params["dataset_file_name"] = "valid.xyz"
@@ -48,24 +53,18 @@ class NequipValidate(Validate):
         natoms = []
         j = 0
         for sys in systems:
-            mixed_type = len(list(sys.glob("*/real_atom_types.npy"))) > 0
-            d = dpdata.MultiSystems()
-            if mixed_type:
-                d.load_systems_from_file(sys, fmt="deepmd/npy/mixed")
-            else:
-                k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
-                d.append(k)
-
-            for k in d:
+            i = 0
+            while os.path.isfile("valid_data/%s_%s.xyz" % (sys, i)):
+                label_atoms = ase.io.read("valid_data/%s_%s.xyz" % (sys, i), index=":")
                 rmse_f_sys = []
                 rmse_e_sys = []
                 natoms_sys = []
-                for i in range(len(k)):
+                for k in range(len(label_atoms)):
                     e_pred = pred_atoms[j].get_potential_energy()
                     f_pred = pred_atoms[j].get_forces()
                     j += 1
-                    f_label = k[i].data["forces"][0]
-                    e_label = k[i].data["energies"][0]
+                    f_label = label_atoms[k].get_forces()
+                    e_label = label_atoms[k].get_potential_energy()
                     n = f_label.shape[0]
                     rmse_e_sys.append(abs(e_pred - e_label) / n)
                     rmse_f_sys.append(np.sqrt(np.mean((f_pred - f_label)**2)))
@@ -73,4 +72,5 @@ class NequipValidate(Validate):
                 rmse_f.append(rmse_f_sys)
                 rmse_e.append(rmse_e_sys)
                 natoms.append(natoms_sys)
+                i += 1
         return rmse_f, rmse_e, None, natoms
