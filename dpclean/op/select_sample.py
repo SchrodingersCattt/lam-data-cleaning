@@ -2,9 +2,9 @@ import math
 import os
 import random
 import shutil
-from abc import ABC, abstractmethod
+from abc import ABC
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import dpdata
 import numpy as np
@@ -120,7 +120,7 @@ class SelectSamples(Validate, ABC):
                 "iter": int,
                 "learning_curve": dict,
                 "select_type": Parameter(str, default="global"),
-                "ratio_selected": Union[float, List[float]],
+                "ratio_selected": List[float],
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
             }
@@ -162,6 +162,20 @@ class SelectSamples(Validate, ABC):
             lcurve["rmse_v"] = lcurve.get("rmse_v", [])
             lcurve["rmse_v"].append(rmse_v)
 
+        ratio_selected = ip["ratio_selected"][ip["iter"]] if ip["iter"] < len(ip["ratio_selected"]) else 0
+        if ratio_selected == 0:
+            n_ramain = 0
+            for sys in ip["candidate_systems"]:
+                k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
+                n_ramain += len(k)
+            return OPIO({
+                "remaining_systems": ip["candidate_systems"],
+                "current_systems": ip["current_systems"],
+                "n_selected": 0,
+                "n_remaining": n_ramain,
+                "learning_curve": lcurve,
+            })
+
         rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"], batch_size=ip["batch_size"])
         nf = sum([len(i) for i in rmse_f])
         if nf == 0:
@@ -172,11 +186,6 @@ class SelectSamples(Validate, ABC):
                 "n_remaining": 0,
                 "learning_curve": lcurve,
             })
-
-        if isinstance(ip["ratio_selected"], list):
-            ratio_selected = ip["ratio_selected"][ip["iter"]] if ip["iter"] < len(ip["ratio_selected"]) else ip["ratio_selected"][-1]
-        else:
-            ratio_selected = ip["ratio_selected"]
 
         indices = [[] for _ in range(len(rmse_f))]
         if ip["select_type"] == "global":
