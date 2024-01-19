@@ -3,7 +3,7 @@ import logging
 import os
 from copy import deepcopy
 from importlib import import_module
-from typing import List, Union
+from typing import List
 
 import dflow
 import dpclean
@@ -13,20 +13,20 @@ from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
 from dflow.plugins.datasets import DatasetsArtifact
 from dflow.plugins.dispatcher import DispatcherExecutor, update_dict
 from dflow.python import PythonOPTemplate, Slices, upload_packages
-from dpclean.op import SplitDataset, Summary
+from dpclean.op import Merge, SplitDataset, Summary
 
 
 class ActiveLearning(Steps):
     def __init__(self, select_op, train_op, select_image, train_image,
                  select_image_pull_policy=None, train_image_pull_policy=None,
                  select_executor=None, train_executor=None, resume=True,
-                 resume_train_params=None, finetune_args=""):
+                 resume_train_params=None, finetune_args="", max_iter=None):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
         self.inputs.parameters["learning_curve"] = InputParameter(type=dict)
         self.inputs.parameters["select_type"] = InputParameter(type=str)
-        self.inputs.parameters["ratio_selected"] = InputParameter(type=Union[float, List[float]])
+        self.inputs.parameters["ratio_selected"] = InputParameter(type=List[float])
         self.inputs.parameters["batch_size"] = InputParameter(type=str, value="auto")
         self.inputs.artifacts["candidate_systems"] = InputArtifact()
         self.inputs.artifacts["current_systems"] = InputArtifact()
@@ -90,12 +90,12 @@ class ActiveLearning(Steps):
                        "pretrained_model": self.inputs.artifacts["pretrained_model"],
                        "model": train_step.outputs.artifacts["model"]
                        if resume else None},
-            when="%s > 0" % select_step.outputs.parameters["n_selected"],
+            when="%s < %s" % (self.inputs.parameters["iter"], max_iter),
         )
         self.add(next_step)
 
         self.outputs.parameters["learning_curve"].value_from_expression = if_expression(
-            _if=select_step.outputs.parameters["n_selected"] > 0,
+            _if=self.inputs.parameters["iter"] < max_iter,
             _then=next_step.outputs.parameters["learning_curve"],
             _else=select_step.outputs.parameters["learning_curve"])
 
@@ -334,7 +334,7 @@ def build_active_learning_workflow(config):
     select_type = config.get("select_type", "global")
     valid_data = config["valid_data"]
     pretrained_model = config.get("pretrained_model", config.get("pretrained_model"))
-    resume = config.get("resume", True)
+    resume = config.get("resume", False)
     split = config.get("split", {})
     select = config["select"]
     train = config["train"]
@@ -356,7 +356,7 @@ def build_active_learning_workflow(config):
     select_executor = select.get("executor")
     if select_executor is not None:
         select_executor = DispatcherExecutor(**select_executor)
-    ratio_selected = select.get("ratio_selected", None)
+    ratio_selected = select["ratio_selected"]
     batch_size = select.get("batch_size", "auto")
 
     train_op = import_func(train["op"])
@@ -389,13 +389,65 @@ def build_active_learning_workflow(config):
     )
     wf.add(split_step)
 
+    pretrained_model_artifact = get_artifact(pretrained_model, "finetune model")
+    valid_data_artifact = get_artifact(valid_data, "validation data", True)
+    parallel_steps = []
+    train_all = ratio_selected[-1] == 1.0 and not resume
+    if train_all:
+        ratio_selected.pop()
+        all_steps = Steps("all")
+        all_steps.inputs.artifacts["train_systems"] = InputArtifact()
+        train_step = Step(
+            "train",
+            template=PythonOPTemplate(train_op, image=train_image,
+                                      image_pull_policy=train_image_pull_policy,
+                                      python_packages=dpclean.__path__),
+            parameters={
+                "train_params": train_params,
+                "finetune_args": finetune_args,
+            },
+            artifacts={
+                "train_systems": all_steps.inputs.artifacts["train_systems"],
+                "valid_systems": valid_data_artifact,
+                "pretrained_model": pretrained_model_artifact,
+                "model": None,
+            },
+            executor=train_executor,
+            key="train-all",
+        )
+        all_steps.add(train_step)
+        valid_step = Step(
+            "validate",
+            template=PythonOPTemplate(select_op, image=select_image,
+                                      image_pull_policy=select_image_pull_policy,
+                                      python_packages=dpclean.__path__),
+            parameters={"iter": 0,
+                        "learning_curve": {},
+                        "ratio_selected": [0.0],
+                        "train_params": train_params,
+                        "batch_size": batch_size},
+            artifacts={"current_systems": all_steps.inputs.artifacts["train_systems"],
+                       "candidate_systems": upload_artifact([]),
+                       "valid_systems": valid_data_artifact,
+                       "model": train_step.outputs.artifacts["model"]},
+            executor=select_executor,
+            key="valid-all",
+        )
+        all_steps.add(valid_step)
+        all_steps.outputs.parameters["learning_curve"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["learning_curve"])
+        all_step = Step(
+            "all",
+            template=all_steps,
+            artifacts={
+                "train_systems": [split_step.outputs.artifacts["init_systems"], split_step.outputs.artifacts["systems"]]},
+        )
+        parallel_steps.append(all_step)
+
     active_learning = ActiveLearning(
         select_op, train_op, select_image, train_image,
         select_image_pull_policy, train_image_pull_policy, select_executor,
-        train_executor, resume, resume_train_params, finetune_args)
+        train_executor, resume, resume_train_params, finetune_args, len(ratio_selected))
 
-    pretrained_model_artifact = get_artifact(pretrained_model, "finetune model")
-    valid_data_artifact = get_artifact(valid_data, "validation data", True)
     loop_step = Step(
         "active-learning-loop",
         template=active_learning,
@@ -409,6 +461,7 @@ def build_active_learning_workflow(config):
                    "valid_systems": valid_data_artifact,
                    "pretrained_model": pretrained_model_artifact,
                    "model": None})
+    parallel_steps.append(loop_step)
 
     if zero_shot:
         zero_steps = Steps("zero-shot")
@@ -445,7 +498,7 @@ def build_active_learning_workflow(config):
                                       python_packages=dpclean.__path__),
             parameters={"iter": 0,
                         "learning_curve": {},
-                        "ratio_selected": 0.0,
+                        "ratio_selected": [0.0],
                         "train_params": zero_params,
                         "batch_size": batch_size},
             artifacts={"current_systems": upload_artifact([]),
@@ -458,7 +511,21 @@ def build_active_learning_workflow(config):
         zero_steps.add(valid_step)
         zero_steps.outputs.parameters["learning_curve"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["learning_curve"])
         zero_step = Step("zero-shot", template=zero_steps)
-        wf.add([zero_step, loop_step])
-    else:
-        wf.add(loop_step)
+        parallel_steps.append(zero_step)
+
+    wf.add(parallel_steps)
+    merge_step = Step(
+        "merge",
+        template=PythonOPTemplate(Merge,
+                                  image="dptechnology/dpdata",
+                                  image_pull_policy="IfNotPresent",
+                                  python_packages=dpclean.__path__),
+        parameters={
+            "loop_lcurve": loop_step.outputs.parameters["learning_curve"],
+            "zero_lcurve": zero_step.outputs.parameters["learning_curve"] if zero_shot else {},
+            "all_lcurve": all_step.outputs.parameters["learning_curve"] if train_all else {},
+        },
+        key="merge",
+    )
+    wf.add(merge_step)
     return wf
