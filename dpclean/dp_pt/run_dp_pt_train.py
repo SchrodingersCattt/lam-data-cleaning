@@ -36,15 +36,16 @@ class RunDPPTTrain(RunTrain):
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
 
+        command = ip["optional_args"].get("command", "dp_pt")
         if len(glob.glob("model_[0-9]*.pt")) > 0:  # for restart
             checkpoint = "model_%s.pt" % max([int(f[6:-3]) for f in glob.glob("model_[0-9]*.pt")])
-            cmd = 'dp_pt train input.json --restart %s' % checkpoint
+            cmd = '%s train input.json --restart %s' % (command, checkpoint)
         elif ip["model"] is not None:
-            cmd = 'dp_pt train input.json --init-model %s' % ip["model"]
+            cmd = '%s train input.json --init-model %s' % (command, ip["model"])
         elif ip["pretrained_model"] is not None:
-            cmd = 'dp_pt train --finetune %s %s input.json' % (ip["pretrained_model"], ip["finetune_args"])
+            cmd = '%s train --finetune %s %s input.json' % (command, ip["pretrained_model"], ip["finetune_args"])
         else:
-            cmd = 'dp_pt train input.json'
+            cmd = '%s train input.json' % command
         print("Run command '%s'" % cmd)
         ret = os.system(cmd)
         assert ret == 0, "Command '%s' failed" % cmd
