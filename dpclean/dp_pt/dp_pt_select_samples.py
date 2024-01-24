@@ -25,10 +25,11 @@ class DPPTValidate(Validate):
         e, f, v = self.dp.eval(coord, cell, atype, infer_batch_size=1)
         return e.reshape([1])[0], f.reshape([-1, 3]), v.reshape([3, 3])
 
-    def validate(self, systems, train_params, batch_size="auto"):
+    def validate(self, systems, train_params, batch_size="auto", optional_args=None):
         with open("valid.txt", "w") as f:
             f.write("\n".join([str(sys) for sys in systems]))
-        cmd = "dp_pt test -m %s -f valid.txt -n 99999999 -d result -b %s" % (self.model, batch_size)
+        command = (optional_args or {}).get("command", "dp_pt")
+        cmd = "%s test -m %s -f valid.txt -n 99999999 -d result -b %s" % (command, self.model, batch_size)
         print("Run command '%s'" % cmd)
         ret = os.system(cmd)
         assert ret == 0, "Command '%s' failed" % cmd

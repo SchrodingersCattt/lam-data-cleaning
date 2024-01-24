@@ -20,6 +20,7 @@ class Validate(OP, ABC):
                 "model": Artifact(Path),
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
+                "optional_args": Parameter(dict, default={}),
             }
         )
 
@@ -41,7 +42,7 @@ class Validate(OP, ABC):
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
-    def validate(self, systems, train_params, batch_size):
+    def validate(self, systems, train_params, batch_size, optional_args=None):
         rmse_f = []
         rmse_e = []
         rmse_v = []
@@ -96,7 +97,7 @@ class Validate(OP, ABC):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"])
+        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
         na = sum([sum(i) for i in natoms])
         nf = sum([len(i) for i in natoms])
         rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
@@ -123,6 +124,7 @@ class SelectSamples(Validate, ABC):
                 "ratio_selected": List[float],
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
+                "optional_args": Parameter(dict, default={}),
             }
         )
 
@@ -141,7 +143,7 @@ class SelectSamples(Validate, ABC):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"])
+        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
         na = sum([sum(i) for i in natoms])
         nf = sum([len(i) for i in natoms])
         rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
@@ -176,7 +178,7 @@ class SelectSamples(Validate, ABC):
                 "learning_curve": lcurve,
             })
 
-        rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"], batch_size=ip["batch_size"])
+        rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
         nf = sum([len(i) for i in rmse_f])
         if nf == 0:
             return OPIO({

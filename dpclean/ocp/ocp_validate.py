@@ -13,7 +13,7 @@ class OCPValidate(Validate):
     def load_model(self, model: Path):
         self.model = model
 
-    def validate(self, systems, train_params, batch_size):
+    def validate(self, systems, train_params, batch_size, optional_args=None):
         import multiprocessing
 
         import ase
