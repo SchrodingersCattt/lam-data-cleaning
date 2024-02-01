@@ -338,7 +338,6 @@ def build_active_learning_workflow(config):
     wf_name = config.get("name", "clean-data")
     zero_shot = config.get("zero_shot", False)
     dataset = config["dataset"]
-    init_data = config.get("init_data", None)
     ratio_init = config.get("ratio_init", None)
     select_type = config.get("select_type", "global")
     valid_data = config["valid_data"]
@@ -385,25 +384,12 @@ def build_active_learning_workflow(config):
     train_optional_args = train.get("optional_args", {})
 
     wf = Workflow(wf_name, parameters={"input": config})
-    dataset_artifact = get_artifact(dataset, "dataset")
-    init_data_artifact = get_artifact(init_data, "init data", True)
-    split_step = Step(
-        "split-dataset",
-        template=PythonOPTemplate(split_op, image=split_image,
-                                  image_pull_policy=split_image_pull_policy,
-                                  python_packages=dpclean.__path__),
-        parameters={"ratio_init": ratio_init if init_data is None else 0.0},
-        artifacts={"dataset": dataset_artifact,
-                   "init_systems": init_data_artifact},
-        executor=split_executor,
-        key="split-dataset"
-    )
-    wf.add(split_step)
+    dataset_artifact = get_artifact(dataset, "dataset", True)
 
     pretrained_model_artifact = get_artifact(pretrained_model, "finetune model")
     valid_data_artifact = get_artifact(valid_data, "validation data", True)
     parallel_steps = []
-    train_all = ratio_selected[-1] == 1.0 and not resume
+    train_all = len(ratio_selected) > 0 and ratio_selected[-1] == 1.0 and not resume
     if train_all:
         ratio_selected.pop()
         all_steps = Steps("all")
@@ -452,33 +438,11 @@ def build_active_learning_workflow(config):
             "all",
             template=all_steps,
             artifacts={
-                "train_systems": [split_step.outputs.artifacts["init_systems"], split_step.outputs.artifacts["systems"]]},
+                "train_systems": dataset_artifact},
         )
         parallel_steps.append(all_step)
 
-    active_learning = ActiveLearning(
-        select_op, train_op, select_image, train_image,
-        select_image_pull_policy, train_image_pull_policy, select_executor,
-        train_executor, resume, resume_train_params, finetune_args, len(ratio_selected),
-        train_optional_args, select_optional_args)
-
-    loop_step = Step(
-        "active-learning-loop",
-        template=active_learning,
-        parameters={"train_params": train_params,
-                    "learning_curve": {},
-                    "select_type": select_type,
-                    "ratio_selected": ratio_selected,
-                    "batch_size": batch_size},
-        artifacts={"current_systems": split_step.outputs.artifacts["init_systems"],
-                   "candidate_systems": split_step.outputs.artifacts["systems"],
-                   "valid_systems": valid_data_artifact,
-                   "pretrained_model": pretrained_model_artifact,
-                   "model": None})
-    parallel_steps.append(loop_step)
-
-    if zero_shot:
-        zero_steps = Steps("zero-shot")
+    def get_zero_steps(ratio_selected, candidate_systems):
         zero_params = deepcopy(train_params)
         zero_params["training"]["numb_steps"] = 1
         zero_params["training"]["disp_freq"] = 1
@@ -505,7 +469,6 @@ def build_active_learning_workflow(config):
             executor=train_executor,
             key="train-zero",
         )
-        zero_steps.add(train_step)
         valid_step = Step(
             "validate",
             template=PythonOPTemplate(select_op, image=select_image,
@@ -513,17 +476,85 @@ def build_active_learning_workflow(config):
                                       python_packages=dpclean.__path__),
             parameters={"iter": 0,
                         "learning_curve": {},
-                        "ratio_selected": [0.0],
+                        "ratio_selected": ratio_selected,
                         "train_params": zero_params,
                         "batch_size": batch_size,
                         "optional_args": select_optional_args},
             artifacts={"current_systems": upload_artifact([]),
-                       "candidate_systems": upload_artifact([]),
+                       "candidate_systems": candidate_systems,
                        "valid_systems": valid_data_artifact,
                        "model": train_step.outputs.artifacts["model"]},
             executor=select_executor,
             key="valid-zero",
         )
+        return train_step, valid_step
+
+    active_learning_steps = Steps("active-learning")
+    active_learning = ActiveLearning(
+        select_op, train_op, select_image, train_image,
+        select_image_pull_policy, train_image_pull_policy, select_executor,
+        train_executor, resume, resume_train_params, finetune_args, len(ratio_selected),
+        train_optional_args, select_optional_args)
+    if ratio_init > 0:
+        split_step = Step(
+            "split-dataset",
+            template=PythonOPTemplate(split_op, image=split_image,
+                                    image_pull_policy=split_image_pull_policy,
+                                    python_packages=dpclean.__path__),
+            parameters={"ratio_init": ratio_init},
+            artifacts={"dataset": dataset_artifact},
+            executor=split_executor,
+            key="split-dataset"
+        )
+        active_learning_steps.add(split_step)
+
+        loop_step = Step(
+            "active-learning-loop",
+            template=active_learning,
+            parameters={"train_params": train_params,
+                        "learning_curve": {},
+                        "select_type": select_type,
+                        "ratio_selected": ratio_selected,
+                        "batch_size": batch_size},
+            artifacts={"current_systems": split_step.outputs.artifacts["init_systems"],
+                       "candidate_systems": split_step.outputs.artifacts["systems"],
+                       "valid_systems": valid_data_artifact,
+                       "pretrained_model": pretrained_model_artifact,
+                       "model": None})
+        active_learning_steps.add(loop_step)
+        active_learning_steps.outputs.parameters["learning_curve"] = OutputParameter(value_from_parameter=loop_step.outputs.parameters["learning_curve"])
+    else:
+        zero_shot = False
+        train_step, valid_step = get_zero_steps(ratio_selected, dataset_artifact)
+        active_learning_steps.add(train_step)
+        active_learning_steps.add(valid_step)
+        if len(ratio_selected) > 0:
+            loop_step = Step(
+                "active-learning-loop",
+                template=active_learning,
+                parameters={"iter": 1,
+                            "train_params": train_params,
+                            "learning_curve": valid_step.outputs.parameters["learning_curve"],
+                            "select_type": select_type,
+                            "ratio_selected": ratio_selected,
+                            "batch_size": batch_size},
+                artifacts={"current_systems": valid_step.outputs.artifacts["current_systems"],
+                           "candidate_systems": valid_step.outputs.artifacts["remaining_systems"],
+                           "valid_systems": valid_data_artifact,
+                           "pretrained_model": pretrained_model_artifact,
+                           "model": train_step.outputs.artifacts["model"] if resume else None})
+            active_learning_steps.add(loop_step)
+            active_learning_steps.outputs.parameters["learning_curve"] = OutputParameter(value_from_parameter=loop_step.outputs.parameters["learning_curve"])
+        else:
+            active_learning_steps.outputs.parameters["learning_curve"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["learning_curve"])
+
+    active_learning_step = Step("active-learning", active_learning_steps)
+    parallel_steps.append(active_learning_step)
+
+    if zero_shot:
+        zero_steps = Steps("zero-shot")
+        train_step, valid_step = get_zero_steps([], upload_artifact([]))
+        zero_steps.add(train_step)
         zero_steps.add(valid_step)
         zero_steps.outputs.parameters["learning_curve"] = OutputParameter(value_from_parameter=valid_step.outputs.parameters["learning_curve"])
         zero_step = Step("zero-shot", template=zero_steps)
@@ -537,7 +568,7 @@ def build_active_learning_workflow(config):
                                   image_pull_policy="IfNotPresent",
                                   python_packages=dpclean.__path__),
         parameters={
-            "loop_lcurve": loop_step.outputs.parameters["learning_curve"],
+            "loop_lcurve": active_learning_step.outputs.parameters["learning_curve"],
             "zero_lcurve": zero_step.outputs.parameters["learning_curve"] if zero_shot else {},
             "all_lcurve": all_step.outputs.parameters["learning_curve"] if train_all else {},
         },
