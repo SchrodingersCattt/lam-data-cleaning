@@ -14,7 +14,6 @@ class SplitDataset(OP):
     def get_input_sign(cls):
         return OPIOSign({
             "dataset": Artifact(Path),
-            "init_systems": Artifact(List[Path]),
             "ratio_init": Parameter(float, default=0.0),
         })
 
@@ -29,8 +28,6 @@ class SplitDataset(OP):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         init_systems = []
-        if ip["init_systems"] is not None:
-            init_systems += ip["init_systems"]
 
         n_total = 0
         remaining_systems = []
