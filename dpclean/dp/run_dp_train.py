@@ -30,7 +30,9 @@ class RunDPTrain(RunTrain):
         if isinstance(params["training"]["numb_steps"], str):
             params["training"]["numb_steps"] = eval(params["training"]["numb_steps"], {"n": nf, "math": math})
         if isinstance(params["learning_rate"]["decay_steps"], str):
-            params["learning_rate"]["decay_steps"] = eval(params["learning_rate"]["decay_steps"], {"n": nf, "math": math})
+            params["learning_rate"]["decay_steps"] = eval(params["learning_rate"]["decay_steps"], {"n": nf, "nsteps": params["training"]["numb_steps"], "math": math})
+        if isinstance(params["learning_rate"]["start_lr"], str):
+            params["learning_rate"]["start_lr"] = eval(params["learning_rate"]["start_lr"], {"n": nf, "nsteps": params["training"]["numb_steps"], "math": math})
 
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
