@@ -24,10 +24,10 @@ class DPValidate(Validate):
         e, f, v = self.dp.eval(coord, cell, atype)
         return e[0], f[0], v[0].reshape([3, 3])
 
-    def validate(self, systems, train_params, batch_size="auto", optional_args=None):
+    def validate(self, systems, train_params, batch_size="auto", optional_args=None, backend="pt"):
         with open("valid.txt", "w") as f:
             f.write("\n".join([str(sys) for sys in systems]))
-        cmd = "dp test -m %s -f valid.txt -n 99999999 -d result" % self.model
+        cmd = "dp --%s test -m %s -f valid.txt -n 99999999 -d result" % (backend, self.model)
         print("Run command '%s'" % cmd)
         ret = os.system(cmd)
         assert ret == 0, "Command '%s' failed" % cmd
