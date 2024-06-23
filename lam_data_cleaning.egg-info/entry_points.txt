@@ -1,0 +1,2 @@
+[console_scripts]
+dpclean = dpclean.entrypoints.main:main

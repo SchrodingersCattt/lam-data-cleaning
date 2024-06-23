@@ -11,6 +11,7 @@ from pathlib import Path
 class RunDPTrain(RunTrain):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
+        BACKEND = ip["backend"]
         params = ip["train_params"]
         params["training"]["training_data"]["systems"] = [
             str(s) for s in ip["train_systems"]]
@@ -37,19 +38,40 @@ class RunDPTrain(RunTrain):
         with open("input.json", "w") as f:
             json.dump(params, f, indent=2)
 
-        if os.path.exists("checkpoint"):  # for restart
-            cmd = 'dp train --restart model.ckpt input.json'
-        elif ip["model"] is not None:
-            cmd = 'dp train --init-frz-model %s input.json && dp freeze -o graph.pb' % ip["model"]
-        elif ip["pretrained_model"] is not None:
-            cmd = 'dp train --finetune %s %s input.json && dp freeze -o graph.pb' % (ip['pretrained_model'], ip["finetune_args"])
-        else:
-            cmd = 'dp train input.json && dp freeze -o graph.pb'
-        print("Run command '%s'" % cmd)
-        ret = os.system(cmd)
-        assert ret == 0, "Command '%s' failed" % cmd
+        if BACKEND == "tf" or None:
+            if os.path.exists("checkpoint"):  # for restart
+                cmd = 'dp train --restart model.ckpt input.json'
+            elif ip["model"] is not None:
+                cmd = 'dp train --init-frz-model %s input.json && dp freeze -o graph.pb' % ip["model"]
+            elif ip["pretrained_model"] is not None:
+                cmd = 'dp train --finetune %s %s input.json && dp freeze -o graph.pb' % (ip['pretrained_model'], ip["finetune_args"])
+            else:
+                cmd = 'dp train input.json && dp freeze -o graph.pb'
 
-        return OPIO({
-            "model": Path("graph.pb"),
-            "output_files": [Path("input.json"), Path("lcurve.out")],
-        })
+            print("Run command '%s'" % cmd)
+            ret = os.system(cmd)
+            assert ret == 0, "Command '%s' failed" % cmd
+
+            return OPIO({
+                "model": Path("graph.pb"),
+                "output_files": [Path("input.json"), Path("lcurve.out")],
+            })
+
+        elif BACKEND == "pt":
+            if os.path.exists("checkpoint"):  # for restart
+                cmd = 'dp --pt train --restart model.ckpt.pt input.json'
+            elif ip["model"] is not None:
+                cmd = 'dp --pt train --init-frz-model %s input.json' % ip["model"]
+            elif ip["pretrained_model"] is not None:
+                cmd = 'dp --pt train --finetune %s %s input.json' % (ip['pretrained_model'], ip["finetune_args"])
+            else:
+                cmd = 'dp --pt train input.json'
+
+            print("Run command '%s'" % cmd)
+            ret = os.system(cmd)
+            assert ret == 0, "Command '%s' failed" % cmd
+
+            return OPIO({
+                "model": Path("model.ckpt.pt"),
+                "output_files": [Path("input.json"), Path("lcurve.out")],
+            })
