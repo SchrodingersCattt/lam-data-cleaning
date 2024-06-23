@@ -10,7 +10,7 @@ class Statistics(OP):
     def get_input_sign(cls):
         return OPIOSign({
             "dataset": Artifact(NestedDict[Path]),
-        })
+        }) 
 
     @classmethod
     def get_output_sign(cls):
