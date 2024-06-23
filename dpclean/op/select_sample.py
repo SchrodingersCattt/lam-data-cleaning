@@ -33,7 +33,7 @@ class Validate(OP, ABC):
             }
         )
 
-    def load_model(self, model: Path, backend):
+    def load_model(self, model: Path):
         pass
 
     def evaluate(self,

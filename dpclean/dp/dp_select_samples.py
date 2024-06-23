@@ -8,8 +8,7 @@ from dpclean.op import SelectSamples, Validate
 
 
 class DPValidate(Validate):
-    def load_model(self, model: Path, backend):
-        self.backend = backend
+    def load_model(self, model: Path):
         self.model = model
         from deepmd.infer import DeepPot
         self.dp = DeepPot(model)
@@ -28,7 +27,7 @@ class DPValidate(Validate):
     def validate(self, systems, train_params, batch_size="auto", optional_args=None, backend="pt"):
         with open("valid.txt", "w") as f:
             f.write("\n".join([str(sys) for sys in systems]))
-        cmd = "dp --%s test -m %s -f valid.txt -n 99999999 -d result" % (self.backend, self.model)
+        cmd = "dp --%s test -m %s -f valid.txt -n 99999999 -d result" % (backend, self.model)
         print("Run command '%s'" % cmd)
         ret = os.system(cmd)
         assert ret == 0, "Command '%s' failed" % cmd

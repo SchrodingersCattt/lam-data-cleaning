@@ -1,12 +1,38 @@
 {
-    "name": "ferroele-tf",
-    "task": "train_only",
+    "name": "ferroele-finetune-activelearning",
     "dataset": ["./random_split"],
     "valid_data": ["./valid"],
+    "pretrained_model": "OpenLAM_2.1.0_27heads_2024Q1.pt",
     "zero_shot": true,
     "statistics": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
-    "backend": "tf",
-    "valid": {
+    "backend": "pt",
+    "ratio_init": 0.001,
+    "split": {
+        "image_pull_policy": "IfNotPresent"
+    },
+    "select": {
+        "ratio_selected": [0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.33, 1.0],
+        "op": "dpclean.dp.DPSelectSamples",
+        "image": "registry.dp.tech/dplc/deepmd-pytorch:9622b",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "paratera",
+                        "scass_type": "c10_m38_1 * NVIDIA V100",
+                        "maxRescheduleTimes": 10
+                    }
+                }
+            },
+            "retry_on_submission_error": 10
+        }
+    },    
+    "valid": {        
         "op": "dpclean.dp.DPValidate",
         "image": "registry.dp.tech/dptech/deepmd-kit:2024Q1-d23cf3e",
         "image_pull_policy": "IfNotPresent",
@@ -27,7 +53,7 @@
             "retry_on_submission_error": 10
         }
     },
-    "train": {        
+    "train": {
         "op": "dpclean.dp.RunDPTrain",
         "image": "registry.dp.tech/dptech/deepmd-kit:2024Q1-d23cf3e",
         "image_pull_policy": "IfNotPresent",
@@ -47,9 +73,9 @@
             },
             "retry_on_submission_error": 10
         },
+        "finetune_args": "--model-branch Domains_FerroEle",
         "params": {
             "model": {
-
                 "type_map": [
                     "H",
                     "He",
@@ -171,22 +197,39 @@
                     "Og"
                 ],
                 "descriptor": {
-                    "type": "se_atten_v2",
-                    "sel": 120,
-                    "rcut_smth": 0.5,
-                    "rcut": 6.0,
-                    "neuron": [
-                        30,
-                        60,
-                        120
+                    "type": "dpa2",
+                    "tebd_dim": 8,
+                    "repinit_rcut": 9.0,
+                    "repinit_rcut_smth": 8.0,
+                    "repinit_nsel": 120,
+                    "repformer_rcut": 4.0,
+                    "repformer_rcut_smth": 3.5,
+                    "repformer_nsel": 40,
+                    "repinit_neuron": [
+                      25,
+                      50,
+                      100
                     ],
-                    "resnet_dt": false,
-                    "axis_neuron": 12,
-                    "attn": 128,
-                    "attn_layer": 0,
-                    "attn_dotr": true,
-                    "seed": 2150000991
-                },
+                    "repinit_axis_neuron": 12,
+                    "repinit_activation": "tanh",
+                    "repformer_nlayers": 12,
+                    "repformer_g1_dim": 128,
+                    "repformer_g2_dim": 32,
+                    "repformer_attn2_hidden": 32,
+                    "repformer_attn2_nhead": 4,
+                    "repformer_attn1_hidden": 128,
+                    "repformer_attn1_nhead": 4,
+                    "repformer_axis_dim": 4,
+                    "repformer_update_h2": false,
+                    "repformer_update_g1_has_conv": true,
+                    "repformer_update_g1_has_grrg": true,
+                    "repformer_update_g1_has_drrd": true,
+                    "repformer_update_g1_has_attn": true,
+                    "repformer_update_g2_has_g1g1": true,
+                    "repformer_update_g2_has_attn": true,
+                    "repformer_attn2_has_gate": true,
+                    "repformer_add_type_ebd_to_seq": false
+                  },
                 "fitting_net": {
                     "neuron": [
                         240,
@@ -226,6 +269,7 @@
                     "_comment": "that's all"
                 },
                 "numb_steps": "math.ceil(133.0*n)",
+                "warmup_steps": 0,
                 "gradient_max_norm": 5.0,
                 "seed": 1,
                 "disp_file": "lcurve.out",
