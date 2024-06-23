@@ -4,6 +4,7 @@
     "dataset": "oss://11881/11176/store/upload/wangh-v1.2-downstream/Domains/FerroEle/random_split.tgz",
     "valid_data": "oss://11881/11176/store/upload/wangh-v1.2-downstream/Domains/FerroEle/valid.tgz",
     "zero_shot": true,
+    "statistics": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
     "valid": {
         "op": "dpclean.dp.DPValidate",
         "image": "registry.dp.tech/dptech/deepmd-kit:2024Q1-d23cf3e",
