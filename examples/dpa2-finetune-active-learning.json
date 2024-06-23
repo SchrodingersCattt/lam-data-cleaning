@@ -5,7 +5,6 @@
     "pretrained_model": "oss://11881/11176/store/upload/pretrained_models/20231120_100w.pt",
     "zero_shot": true,
     "ratio_init": 0.001,
-    "statistics": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
     "split": {
         "image_pull_policy": "IfNotPresent"
     },

@@ -19,7 +19,7 @@ class RunTrain(OP, ABC):
                 "old_systems": Artifact(List[Path], optional=True),
                 "old_ratio": Parameter(float, default=0.0),
                 "optional_args": Parameter(dict, default={}),
-                "backend": Parameter(str, default="tf"),
+                "backend": Parameter(str, default="pt"),
             }
         )
 

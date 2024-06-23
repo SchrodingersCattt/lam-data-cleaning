@@ -21,7 +21,7 @@ class Validate(OP, ABC):
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
                 "optional_args": Parameter(dict, default={}),
-                "backend": Parameter(str, default="tf"),
+                "backend": Parameter(str, default="pt"),
             }
         )
 
@@ -33,7 +33,7 @@ class Validate(OP, ABC):
             }
         )
 
-    def load_model(self, model: Path):
+    def load_model(self, model: Path, backend):
         pass
 
     def evaluate(self,
@@ -126,6 +126,7 @@ class SelectSamples(Validate, ABC):
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
                 "optional_args": Parameter(dict, default={}),
+                "backend": Parameter(str, default="pt"),
             }
         )
 

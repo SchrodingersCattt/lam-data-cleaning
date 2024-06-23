@@ -21,7 +21,7 @@ class ActiveLearning(Steps):
                  select_image_pull_policy=None, train_image_pull_policy=None,
                  select_executor=None, train_executor=None, resume=True,
                  resume_train_params=None, finetune_args="", max_iter=None,
-                 train_optional_args=None, select_optional_args=None):
+                 train_optional_args=None, select_optional_args=None, BACKEND="tf"):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
@@ -43,7 +43,8 @@ class ActiveLearning(Steps):
                                       python_packages=dpclean.__path__),
             parameters={"train_params": self.inputs.parameters["train_params"],
                         "finetune_args": finetune_args,
-                        "optional_args": train_optional_args or {}},
+                        "optional_args": train_optional_args or {},
+                        "backend": BACKEND,},
             artifacts={"train_systems": self.inputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
                        "pretrained_model": self.inputs.artifacts["pretrained_model"],
@@ -64,7 +65,8 @@ class ActiveLearning(Steps):
                         "ratio_selected": self.inputs.parameters["ratio_selected"],
                         "train_params": self.inputs.parameters["train_params"],
                         "batch_size": self.inputs.parameters["batch_size"],
-                        "optional_args": select_optional_args or {}},
+                        "optional_args": select_optional_args or {},
+                        "backend": BACKEND,},
             artifacts={"current_systems": self.inputs.artifacts["current_systems"],
                        "candidate_systems": self.inputs.artifacts["candidate_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -148,6 +150,7 @@ def build_train_only_workflow(config):
     wf_name = config.get("name", "clean-data")
     zero_shot = config.get("zero_shot", False)
     dataset = config.get("dataset", None)
+    BACKEND = config.get("backend", None)
     if isinstance(dataset, list):
         for i, subset in enumerate(dataset):
             path_list = []
@@ -212,6 +215,7 @@ def build_train_only_workflow(config):
                 "finetune_args": finetune_args,
                 "old_ratio": old_ratio,
                 "optional_args": train_optional_args,
+                "backend": BACKEND,
             },
             artifacts={
                 "train_systems": valid_data_artifact,
@@ -231,7 +235,8 @@ def build_train_only_workflow(config):
                                     python_packages=dpclean.__path__),
             parameters={"train_params": zero_params,
                         "batch_size": batch_size,
-                        "optional_args": valid_optional_args},
+                        "optional_args": valid_optional_args,
+                        "backend": BACKEND,},
             artifacts={"valid_systems": valid_data_artifact,
                        "model": train_step.outputs.artifacts["model"]},
             executor=valid_executor,
@@ -255,6 +260,7 @@ def build_train_only_workflow(config):
             "finetune_args": finetune_args,
             "old_ratio": old_ratio,
             "optional_args": train_optional_args,
+            "backend": BACKEND,
         },
         artifacts={
             "train_systems": steps.inputs.artifacts["train_systems"],
@@ -274,7 +280,8 @@ def build_train_only_workflow(config):
                                   python_packages=dpclean.__path__),
         parameters={"train_params": train_params,
                     "batch_size": batch_size,
-                    "optional_args": valid_optional_args},
+                    "optional_args": valid_optional_args,
+                    "backend": BACKEND,},
         artifacts={"valid_systems": valid_data_artifact,
                    "model": train_step.outputs.artifacts["model"]},
         executor=valid_executor,
@@ -346,6 +353,7 @@ def build_active_learning_workflow(config):
     split = config.get("split", {})
     select = config["select"]
     train = config["train"]
+    BACKEND = config["backend"]
 
     split_op = split.get("op")
     if split_op is None:
@@ -403,6 +411,7 @@ def build_active_learning_workflow(config):
                 "train_params": train_params,
                 "finetune_args": finetune_args,
                 "optional_args": train_optional_args,
+                "backend": BACKEND,
             },
             artifacts={
                 "train_systems": all_steps.inputs.artifacts["train_systems"],
@@ -424,7 +433,8 @@ def build_active_learning_workflow(config):
                         "ratio_selected": [0.0],
                         "train_params": train_params,
                         "batch_size": batch_size,
-                        "optional_args": select_optional_args},
+                        "optional_args": select_optional_args,
+                        "backend": BACKEND,},
             artifacts={"current_systems": all_steps.inputs.artifacts["train_systems"],
                        "candidate_systems": upload_artifact([]),
                        "valid_systems": valid_data_artifact,
@@ -459,6 +469,7 @@ def build_active_learning_workflow(config):
                 "train_params": zero_params,
                 "finetune_args": finetune_args,
                 "optional_args": train_optional_args,
+                "backend": BACKEND,
             },
             artifacts={
                 "train_systems": valid_data_artifact,
@@ -479,7 +490,8 @@ def build_active_learning_workflow(config):
                         "ratio_selected": ratio_selected,
                         "train_params": zero_params,
                         "batch_size": batch_size,
-                        "optional_args": select_optional_args},
+                        "optional_args": select_optional_args,
+                        "backend": BACKEND,},
             artifacts={"current_systems": upload_artifact([]),
                        "candidate_systems": candidate_systems,
                        "valid_systems": valid_data_artifact,
@@ -494,7 +506,7 @@ def build_active_learning_workflow(config):
         select_op, train_op, select_image, train_image,
         select_image_pull_policy, train_image_pull_policy, select_executor,
         train_executor, resume, resume_train_params, finetune_args, len(ratio_selected),
-        train_optional_args, select_optional_args)
+        train_optional_args, select_optional_args, BACKEND,)
     if ratio_init > 0:
         split_step = Step(
             "split-dataset",
