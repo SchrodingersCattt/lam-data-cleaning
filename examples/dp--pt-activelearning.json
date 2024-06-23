@@ -4,13 +4,12 @@
     "valid_data": ["./valid"],
     "zero_shot": true,
     "statistics": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
+    "summary": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
+    "split": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
     "backend": "pt",
-    "ratio_init": 0.001,
-    "split": {
-        "image_pull_policy": "IfNotPresent"
-    },
+    "ratio_init": 0.1,
     "select": {
-        "ratio_selected": [0.001, 0.20, 1.0],
+        "ratio_selected": [0.1, 0.33, 1.0],
         "op": "dpclean.dp.DPSelectSamples",
         "image": "registry.dp.tech/dptech/deepmd-kit:2024Q1-d23cf3e",
         "image_pull_policy": "IfNotPresent",

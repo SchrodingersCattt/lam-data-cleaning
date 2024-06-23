@@ -175,6 +175,10 @@ def build_train_only_workflow(config):
     if stat_executor is not None:
         stat_executor = DispatcherExecutor(**stat_executor)
 
+    summ = config.get("summary", {})
+    summ_image = stat_image = stat.get("image", "dptechnology/dpdata")
+
+
     train = config["train"]
     train_op = import_func(train["op"])
     train_image = train["image"]
@@ -331,7 +335,7 @@ def build_train_only_workflow(config):
     sum_step = Step(
         "summary",
         template=PythonOPTemplate(Summary,
-                                  image="dptechnology/dpdata",
+                                  image=summ_image,
                                   image_pull_policy="IfNotPresent",
                                   python_packages=dpclean.__path__),
         parameters=parameters,

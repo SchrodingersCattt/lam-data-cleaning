@@ -5,6 +5,7 @@
     "valid_data": ["./valid"],
     "zero_shot": true,
     "statistics": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
+    "summary": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
     "backend": "pt",
     "valid": {
         "op": "dpclean.dp.DPValidate",

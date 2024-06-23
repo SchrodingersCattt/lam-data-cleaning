@@ -43,3 +43,6 @@ dbconfig.json
 _build
 dpclean/_version.py
 *egg-info
+example/OpenLAM_2.1.0_27heads_2024Q1.pt
+example/random_split
+example/valid
