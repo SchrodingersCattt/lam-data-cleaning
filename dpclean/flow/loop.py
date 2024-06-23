@@ -176,8 +176,7 @@ def build_train_only_workflow(config):
         stat_executor = DispatcherExecutor(**stat_executor)
 
     summ = config.get("summary", {})
-    summ_image = stat_image = stat.get("image", "dptechnology/dpdata")
-
+    summ_image = summ.get("image", "dptechnology/dpdata")
 
     train = config["train"]
     train_op = import_func(train["op"])
@@ -505,6 +504,10 @@ def build_active_learning_workflow(config):
         )
         return train_step, valid_step
 
+
+    merge = config.get("merge", {})
+    merge_image = merge.get("image", "dptechnology/dpdata")
+    
     active_learning_steps = Steps("active-learning")
     active_learning = ActiveLearning(
         select_op, train_op, select_image, train_image,
@@ -580,7 +583,7 @@ def build_active_learning_workflow(config):
     merge_step = Step(
         "merge",
         template=PythonOPTemplate(Merge,
-                                  image="dptechnology/dpdata",
+                                  image=merge_image,
                                   image_pull_policy="IfNotPresent",
                                   python_packages=dpclean.__path__),
         parameters={
