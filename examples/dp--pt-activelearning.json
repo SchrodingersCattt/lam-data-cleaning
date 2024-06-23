@@ -23,7 +23,7 @@
                     "input_data": {
                         "job_type": "container",
                         "platform": "paratera",
-                        "scass_type": "c10_m38_1 * NVIDIA V100",
+                        "scass_type": "c8_m31_1 * NVIDIA T4",
                         "maxRescheduleTimes": 10
                     }
                 }
