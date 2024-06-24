@@ -20,7 +20,7 @@ class Validate(OP, ABC):
                 "model": Artifact(Path),
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
-                "optional_args": Parameter(dict, default={"backend":"pt"}),
+                "optional_args": Parameter(dict, default={}),
             }
         )
 

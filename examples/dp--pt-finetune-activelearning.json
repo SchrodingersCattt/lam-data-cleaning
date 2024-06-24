@@ -1,7 +1,7 @@
 {
     "name": "ferroele-finetune-activelearning",
-    "dataset": ["./random_split"],
-    "valid_data": ["./valid"],
+    "dataset": "oss://13756/27666/store/upload/0cc77c29-a4b6-48d9-822f-f01fb184f53a/tmphl2aq5d1.tgz",
+    "valid_data": "oss://13756/27666/store/upload/e6d00208-3b8f-4e47-92e0-6cfc1652953d/tmpssuczzlj.tgz",
     "pretrained_model": "oss://13756/27666/store/upload/39304309-e39a-4115-909a-dc1c5b1af6bf/tmpu202h4wb.tgz",
     "zero_shot": true,
     "statistics": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},

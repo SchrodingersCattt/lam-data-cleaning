@@ -42,3 +42,6 @@ dbconfig.json
 .idea/*
 _build
 dpclean/_version.py
+*.egg-info
+example/random*
+example/valid*

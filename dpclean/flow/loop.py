@@ -21,7 +21,7 @@ class ActiveLearning(Steps):
                  select_image_pull_policy=None, train_image_pull_policy=None,
                  select_executor=None, train_executor=None, resume=True,
                  resume_train_params=None, finetune_args="", max_iter=None,
-                 train_optional_args={"backend":"pt"}, select_optional_args={"backend":"pt"}):
+                 train_optional_args=None, select_optional_args=None):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
@@ -43,7 +43,7 @@ class ActiveLearning(Steps):
                                       python_packages=dpclean.__path__),
             parameters={"train_params": self.inputs.parameters["train_params"],
                         "finetune_args": finetune_args,
-                        "optional_args": train_optional_args or {"backend":"pt"},
+                        "optional_args": train_optional_args or {},
                         },
             artifacts={"train_systems": self.inputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -65,7 +65,7 @@ class ActiveLearning(Steps):
                         "ratio_selected": self.inputs.parameters["ratio_selected"],
                         "train_params": self.inputs.parameters["train_params"],
                         "batch_size": self.inputs.parameters["batch_size"],
-                        "optional_args": select_optional_args or {"backend":"pt"},
+                        "optional_args": select_optional_args or {},
                         },
             artifacts={"current_systems": self.inputs.artifacts["current_systems"],
                        "candidate_systems": self.inputs.artifacts["candidate_systems"],
@@ -150,7 +150,6 @@ def build_train_only_workflow(config):
     wf_name = config.get("name", "clean-data")
     zero_shot = config.get("zero_shot", False)
     dataset = config.get("dataset", None)
-    # BACKEND = config["optional_args"].get("backend", "pt")
     if isinstance(dataset, list):
         for i, subset in enumerate(dataset):
             path_list = []
@@ -187,7 +186,7 @@ def build_train_only_workflow(config):
         train_executor = DispatcherExecutor(**train_executor)
     train_params = train["params"]
     finetune_args = train.get("finetune_args", "")
-    train_optional_args = train.get("optional_args", {"backend":"pt"})
+    train_optional_args = train.get("optional_args", {})
 
     valid = config["valid"]
     batch_size = valid.get("batch_size", "auto")
@@ -197,7 +196,7 @@ def build_train_only_workflow(config):
     valid_executor = valid.get("executor")
     if valid_executor is not None:
         valid_executor = DispatcherExecutor(**valid_executor)
-    valid_optional_args = valid.get("optional_args", {"backend":"pt"})
+    valid_optional_args = valid.get("optional_args", {})
 
     if zero_shot:
         zero_steps = Steps("zero-shot")
@@ -354,7 +353,6 @@ def build_active_learning_workflow(config):
     split = config.get("split", {})
     select = config["select"]
     train = config["train"]
-    # BACKEND = config["optional_args"]["backend"]
 
     split_op = split.get("op")
     if split_op is None:
@@ -375,7 +373,7 @@ def build_active_learning_workflow(config):
         select_executor = DispatcherExecutor(**select_executor)
     ratio_selected = select["ratio_selected"]
     batch_size = select.get("batch_size", "auto")
-    select_optional_args = select.get("optional_args", {"backend":"pt"})
+    select_optional_args = select.get("optional_args", {})
 
     train_op = import_func(train["op"])
     train_image = train["image"]
@@ -390,7 +388,7 @@ def build_active_learning_workflow(config):
         resume_train_params = deepcopy(train_params)
         update_dict(resume_train_params, resume_params)
     finetune_args = train.get("finetune_args", "")
-    train_optional_args = train.get("optional_args", {"backend":"pt"})
+    train_optional_args = train.get("optional_args", {})
 
     wf = Workflow(wf_name, parameters={"input": config})
     dataset_artifact = get_artifact(dataset, "dataset", True)

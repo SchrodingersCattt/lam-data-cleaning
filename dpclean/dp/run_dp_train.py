@@ -11,8 +11,7 @@ from pathlib import Path
 class RunDPTrain(RunTrain):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
-        BACKEND = ip["optional_args"]["backend"]
-        print(BACKEND)
+        BACKEND = ip["optional_args"].get("backend", "pt")
         params = ip["train_params"]
         params["training"]["training_data"]["systems"] = [
             str(s) for s in ip["train_systems"]]
@@ -61,6 +60,8 @@ class RunDPTrain(RunTrain):
         elif BACKEND == "pt" or "null":
             if os.path.exists("checkpoint"):  # for restart
                 cmd = 'dp --pt train --restart model.ckpt.pt input.json'
+            elif ip["model"] is not None:
+                cmd = 'dp --pt train input.json --init-model %s' % (command, ip["model"])
             elif ip["pretrained_model"] is not None:
                 cmd = 'dp --pt train input.json --finetune %s %s' % (ip['pretrained_model'], ip["finetune_args"])
             else:
