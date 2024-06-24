@@ -10,7 +10,6 @@
     "merge": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
     "ratio_init": 0.1,
     "select": {
-        "optional_args": {"backend":"pt"},
         "ratio_selected": [0.1, 0.33, 1.0],
         "op": "dpclean.dp.DPSelectSamples",
         "image": "registry.dp.tech/dptech/deepmd-kit:2024Q1-d23cf3e",
@@ -32,8 +31,7 @@
             "retry_on_submission_error": 10
         }
     },    
-    "valid": { 
-        "optional_args": {"backend":"pt"},       
+    "valid": {    
         "op": "dpclean.dp.DPValidate",
         "image": "registry.dp.tech/dptech/deepmd-kit:2024Q1-d23cf3e",
         "image_pull_policy": "IfNotPresent",

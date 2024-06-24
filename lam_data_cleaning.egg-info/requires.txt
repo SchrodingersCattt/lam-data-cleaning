@@ -1,2 +1,0 @@
-pydflow>=1.7.23
-dpdata
