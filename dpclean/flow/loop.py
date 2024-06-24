@@ -214,7 +214,7 @@ def build_train_only_workflow(config):
                 "train_params": zero_params,
                 "finetune_args": finetune_args,
                 "old_ratio": old_ratio,
-                "optional_args": train_optional_args,                
+                "optional_args": train_optional_args,
             },
             artifacts={
                 "train_systems": valid_data_artifact,
