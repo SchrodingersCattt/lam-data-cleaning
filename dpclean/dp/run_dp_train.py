@@ -57,7 +57,7 @@ class RunDPTrain(RunTrain):
                 "output_files": [Path("input.json"), Path("lcurve.out")],
             })
 
-        elif BACKEND == "pt" or "null":
+        elif BACKEND == "pt":
             if os.path.exists("checkpoint"):  # for restart
                 cmd = 'dp --pt train --restart model.ckpt.pt input.json'
             elif ip["model"] is not None:
@@ -77,4 +77,4 @@ class RunDPTrain(RunTrain):
             })
 
         else:
-            raise ValueError(f"Unsupported backend: {BACKEND}. Expected 'tf', 'pt', or None for pt by default.")
+            raise ValueError(f"Unsupported backend: {BACKEND}. Expected 'tf', 'pt'.")
