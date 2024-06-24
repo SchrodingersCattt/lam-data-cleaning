@@ -21,7 +21,7 @@ class ActiveLearning(Steps):
                  select_image_pull_policy=None, train_image_pull_policy=None,
                  select_executor=None, train_executor=None, resume=True,
                  resume_train_params=None, finetune_args="", max_iter=None,
-                 train_optional_args=None, select_optional_args=None, BACKEND="tf"):
+                 train_optional_args={"backend":"pt"}, select_optional_args={"backend":"pt"}):
         super().__init__("active-learning-loop")
         self.inputs.parameters["iter"] = InputParameter(value=0, type=int)
         self.inputs.parameters["train_params"] = InputParameter(type=dict)
@@ -43,8 +43,8 @@ class ActiveLearning(Steps):
                                       python_packages=dpclean.__path__),
             parameters={"train_params": self.inputs.parameters["train_params"],
                         "finetune_args": finetune_args,
-                        "optional_args": train_optional_args or {},
-                        "backend": BACKEND,},
+                        "optional_args": train_optional_args or {"backend":"pt"},
+                        },
             artifacts={"train_systems": self.inputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
                        "pretrained_model": self.inputs.artifacts["pretrained_model"],
@@ -65,8 +65,8 @@ class ActiveLearning(Steps):
                         "ratio_selected": self.inputs.parameters["ratio_selected"],
                         "train_params": self.inputs.parameters["train_params"],
                         "batch_size": self.inputs.parameters["batch_size"],
-                        "optional_args": select_optional_args or {},
-                        "backend": BACKEND,},
+                        "optional_args": select_optional_args or {"backend":"pt"},
+                        },
             artifacts={"current_systems": self.inputs.artifacts["current_systems"],
                        "candidate_systems": self.inputs.artifacts["candidate_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -150,7 +150,7 @@ def build_train_only_workflow(config):
     wf_name = config.get("name", "clean-data")
     zero_shot = config.get("zero_shot", False)
     dataset = config.get("dataset", None)
-    BACKEND = config.get("backend", None)
+    # BACKEND = config["optional_args"].get("backend", "pt")
     if isinstance(dataset, list):
         for i, subset in enumerate(dataset):
             path_list = []
@@ -187,7 +187,7 @@ def build_train_only_workflow(config):
         train_executor = DispatcherExecutor(**train_executor)
     train_params = train["params"]
     finetune_args = train.get("finetune_args", "")
-    train_optional_args = train.get("optional_args", {})
+    train_optional_args = train.get("optional_args", {"backend":"pt"})
 
     valid = config["valid"]
     batch_size = valid.get("batch_size", "auto")
@@ -197,7 +197,7 @@ def build_train_only_workflow(config):
     valid_executor = valid.get("executor")
     if valid_executor is not None:
         valid_executor = DispatcherExecutor(**valid_executor)
-    valid_optional_args = valid.get("optional_args", {})
+    valid_optional_args = valid.get("optional_args", {"backend":"pt"})
 
     if zero_shot:
         zero_steps = Steps("zero-shot")
@@ -217,8 +217,7 @@ def build_train_only_workflow(config):
                 "train_params": zero_params,
                 "finetune_args": finetune_args,
                 "old_ratio": old_ratio,
-                "optional_args": train_optional_args,
-                "backend": BACKEND,
+                "optional_args": train_optional_args,                
             },
             artifacts={
                 "train_systems": valid_data_artifact,
@@ -239,7 +238,7 @@ def build_train_only_workflow(config):
             parameters={"train_params": zero_params,
                         "batch_size": batch_size,
                         "optional_args": valid_optional_args,
-                        "backend": BACKEND,},
+                        },
             artifacts={"valid_systems": valid_data_artifact,
                        "model": train_step.outputs.artifacts["model"]},
             executor=valid_executor,
@@ -263,7 +262,6 @@ def build_train_only_workflow(config):
             "finetune_args": finetune_args,
             "old_ratio": old_ratio,
             "optional_args": train_optional_args,
-            "backend": BACKEND,
         },
         artifacts={
             "train_systems": steps.inputs.artifacts["train_systems"],
@@ -284,7 +282,7 @@ def build_train_only_workflow(config):
         parameters={"train_params": train_params,
                     "batch_size": batch_size,
                     "optional_args": valid_optional_args,
-                    "backend": BACKEND,},
+                    },
         artifacts={"valid_systems": valid_data_artifact,
                    "model": train_step.outputs.artifacts["model"]},
         executor=valid_executor,
@@ -356,7 +354,7 @@ def build_active_learning_workflow(config):
     split = config.get("split", {})
     select = config["select"]
     train = config["train"]
-    BACKEND = config["backend"]
+    # BACKEND = config["optional_args"]["backend"]
 
     split_op = split.get("op")
     if split_op is None:
@@ -377,7 +375,7 @@ def build_active_learning_workflow(config):
         select_executor = DispatcherExecutor(**select_executor)
     ratio_selected = select["ratio_selected"]
     batch_size = select.get("batch_size", "auto")
-    select_optional_args = select.get("optional_args", {})
+    select_optional_args = select.get("optional_args", {"backend":"pt"})
 
     train_op = import_func(train["op"])
     train_image = train["image"]
@@ -392,7 +390,7 @@ def build_active_learning_workflow(config):
         resume_train_params = deepcopy(train_params)
         update_dict(resume_train_params, resume_params)
     finetune_args = train.get("finetune_args", "")
-    train_optional_args = train.get("optional_args", {})
+    train_optional_args = train.get("optional_args", {"backend":"pt"})
 
     wf = Workflow(wf_name, parameters={"input": config})
     dataset_artifact = get_artifact(dataset, "dataset", True)
@@ -414,7 +412,6 @@ def build_active_learning_workflow(config):
                 "train_params": train_params,
                 "finetune_args": finetune_args,
                 "optional_args": train_optional_args,
-                "backend": BACKEND,
             },
             artifacts={
                 "train_systems": all_steps.inputs.artifacts["train_systems"],
@@ -437,7 +434,7 @@ def build_active_learning_workflow(config):
                         "train_params": train_params,
                         "batch_size": batch_size,
                         "optional_args": select_optional_args,
-                        "backend": BACKEND,},
+                        },
             artifacts={"current_systems": all_steps.inputs.artifacts["train_systems"],
                        "candidate_systems": upload_artifact([]),
                        "valid_systems": valid_data_artifact,
@@ -472,7 +469,6 @@ def build_active_learning_workflow(config):
                 "train_params": zero_params,
                 "finetune_args": finetune_args,
                 "optional_args": train_optional_args,
-                "backend": BACKEND,
             },
             artifacts={
                 "train_systems": valid_data_artifact,
@@ -494,7 +490,7 @@ def build_active_learning_workflow(config):
                         "train_params": zero_params,
                         "batch_size": batch_size,
                         "optional_args": select_optional_args,
-                        "backend": BACKEND,},
+                        },
             artifacts={"current_systems": upload_artifact([]),
                        "candidate_systems": candidate_systems,
                        "valid_systems": valid_data_artifact,
@@ -513,7 +509,7 @@ def build_active_learning_workflow(config):
         select_op, train_op, select_image, train_image,
         select_image_pull_policy, train_image_pull_policy, select_executor,
         train_executor, resume, resume_train_params, finetune_args, len(ratio_selected),
-        train_optional_args, select_optional_args, BACKEND,)
+        train_optional_args, select_optional_args)
     if ratio_init > 0:
         split_step = Step(
             "split-dataset",

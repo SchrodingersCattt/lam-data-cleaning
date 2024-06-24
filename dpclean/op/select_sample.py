@@ -20,8 +20,7 @@ class Validate(OP, ABC):
                 "model": Artifact(Path),
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
-                "optional_args": Parameter(dict, default={}),
-                "backend": Parameter(str, default="pt"),
+                "optional_args": Parameter(dict, default={"backend":"pt"}),
             }
         )
 
@@ -125,8 +124,7 @@ class SelectSamples(Validate, ABC):
                 "ratio_selected": List[float],
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
-                "optional_args": Parameter(dict, default={}),
-                "backend": Parameter(str, default="pt"),
+                "optional_args": Parameter(dict, default={"backend":"pt"}),
             }
         )
 
