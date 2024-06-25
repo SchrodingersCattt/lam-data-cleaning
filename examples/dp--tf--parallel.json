@@ -1,0 +1,239 @@
+{
+    "name": "ferroele-tf",
+    "task": "train_only",
+    "dataset": "oss://13756/27666/store/upload/3d56d785-fb49-4f0f-979d-e07dd5096a12/tmpm8xlrmnv.tgz",
+    "valid_data": "oss://13756/27666/store/upload/e6d00208-3b8f-4e47-92e0-6cfc1652953d/tmpssuczzlj.tgz",
+    "zero_shot": true,
+    "statistics": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
+    "summary": {"image": "registry.dp.tech/dptech/prod-11881/dpgen2-utils:1.2"},
+    "valid": {
+        "op": "dpclean.dp.DPValidate",
+        "image": "registry.dp.tech/dptech/deepmd-kit:2024Q1-d23cf3e",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "paratera",
+                        "scass_type": "c8_m31_1 * NVIDIA T4",
+                        "maxRescheduleTimes": 10
+                    }
+                }
+            },
+            "retry_on_submission_error": 10
+        }
+    },
+    "train": {   
+        "optional_args": {"backend":"tf"},     
+        "op": "dpclean.dp.RunDPTrain",
+        "image": "registry.dp.tech/dptech/deepmd-kit:2024Q1-d23cf3e",
+        "image_pull_policy": "IfNotPresent",
+        "executor": {
+            "image_pull_policy": "IfNotPresent",
+            "machine_dict": {
+                "batch_type": "Bohrium",
+                "context_type": "Bohrium",
+                "remote_profile": {
+                    "input_data": {
+                        "job_type": "container",
+                        "platform": "paratera",
+                        "scass_type": "c8_m31_1 * NVIDIA T4",
+                        "maxRescheduleTimes": 10
+                    }
+                }
+            },
+            "retry_on_submission_error": 10
+        },
+        "params": {
+            "model": {
+
+                "type_map": [
+                    "H",
+                    "He",
+                    "Li",
+                    "Be",
+                    "B",
+                    "C",
+                    "N",
+                    "O",
+                    "F",
+                    "Ne",
+                    "Na",
+                    "Mg",
+                    "Al",
+                    "Si",
+                    "P",
+                    "S",
+                    "Cl",
+                    "Ar",
+                    "K",
+                    "Ca",
+                    "Sc",
+                    "Ti",
+                    "V",
+                    "Cr",
+                    "Mn",
+                    "Fe",
+                    "Co",
+                    "Ni",
+                    "Cu",
+                    "Zn",
+                    "Ga",
+                    "Ge",
+                    "As",
+                    "Se",
+                    "Br",
+                    "Kr",
+                    "Rb",
+                    "Sr",
+                    "Y",
+                    "Zr",
+                    "Nb",
+                    "Mo",
+                    "Tc",
+                    "Ru",
+                    "Rh",
+                    "Pd",
+                    "Ag",
+                    "Cd",
+                    "In",
+                    "Sn",
+                    "Sb",
+                    "Te",
+                    "I",
+                    "Xe",
+                    "Cs",
+                    "Ba",
+                    "La",
+                    "Ce",
+                    "Pr",
+                    "Nd",
+                    "Pm",
+                    "Sm",
+                    "Eu",
+                    "Gd",
+                    "Tb",
+                    "Dy",
+                    "Ho",
+                    "Er",
+                    "Tm",
+                    "Yb",
+                    "Lu",
+                    "Hf",
+                    "Ta",
+                    "W",
+                    "Re",
+                    "Os",
+                    "Ir",
+                    "Pt",
+                    "Au",
+                    "Hg",
+                    "Tl",
+                    "Pb",
+                    "Bi",
+                    "Po",
+                    "At",
+                    "Rn",
+                    "Fr",
+                    "Ra",
+                    "Ac",
+                    "Th",
+                    "Pa",
+                    "U",
+                    "Np",
+                    "Pu",
+                    "Am",
+                    "Cm",
+                    "Bk",
+                    "Cf",
+                    "Es",
+                    "Fm",
+                    "Md",
+                    "No",
+                    "Lr",
+                    "Rf",
+                    "Db",
+                    "Sg",
+                    "Bh",
+                    "Hs",
+                    "Mt",
+                    "Ds",
+                    "Rg",
+                    "Cn",
+                    "Nh",
+                    "Fl",
+                    "Mc",
+                    "Lv",
+                    "Ts",
+                    "Og"
+                ],
+                "descriptor": {
+                    "type": "se_atten_v2",
+                    "sel": 120,
+                    "rcut_smth": 0.5,
+                    "rcut": 6.0,
+                    "neuron": [
+                        30,
+                        60,
+                        120
+                    ],
+                    "resnet_dt": false,
+                    "axis_neuron": 12,
+                    "attn": 128,
+                    "attn_layer": 0,
+                    "attn_dotr": true,
+                    "seed": 2150000991
+                },
+                "fitting_net": {
+                    "neuron": [
+                        240,
+                        240,
+                        240
+                    ],
+                    "resnet_dt": true,
+                    "seed": 1,
+                    "_comment": " that's all"
+                },
+                "_comment": " that's all"
+            },
+            "learning_rate": {
+                "type": "exp",
+                "decay_steps": "math.ceil(0.7*n)",
+                "start_lr": 0.0002,
+                "stop_lr": 3.51e-08,
+                "_comment": "that's all"
+            },
+            "loss": {
+                "type": "ener",
+                "start_pref_e": 0.02,
+                "limit_pref_e": 1,
+                "start_pref_f": 1000,
+                "limit_pref_f": 1,
+                "start_pref_v": 0,
+                "limit_pref_v": 0,
+                "_comment": " that's all"
+            },
+            "training": {
+                "training_data": {
+                    "batch_size": 1,
+                    "_comment": "that's all"
+                },
+                "validation_data": {
+                    "batch_size": 1,
+                    "_comment": "that's all"
+                },
+                "numb_steps": "math.ceil(133.0*n)",
+                "gradient_max_norm": 5.0,
+                "seed": 1,
+                "disp_file": "lcurve.out",
+                "disp_freq": 100,
+                "save_freq": 2000,
+                "_comment": "that's all"
+            }
+        }
+    }
+}
