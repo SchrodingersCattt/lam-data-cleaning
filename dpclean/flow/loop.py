@@ -1,4 +1,5 @@
 import glob
+import json
 import logging
 import os
 from copy import deepcopy
@@ -10,7 +11,7 @@ import dpclean
 from dflow import (InputArtifact, InputParameter, OutputParameter, S3Artifact,
                    Step, Steps, Workflow, argo_enumerate, if_expression,
                    upload_artifact)
-from dflow.plugins.datasets import DatasetsArtifact
+from dflow.plugins.bohrium import BohriumDatasetsArtifact
 from dflow.plugins.dispatcher import DispatcherExecutor, update_dict
 from dflow.python import PythonOPTemplate, Slices, upload_packages
 from dpclean.op import Merge, SplitDataset, Summary
@@ -29,6 +30,7 @@ class ActiveLearning(Steps):
         self.inputs.parameters["select_type"] = InputParameter(type=str)
         self.inputs.parameters["ratio_selected"] = InputParameter(type=List[float])
         self.inputs.parameters["batch_size"] = InputParameter(type=str, value="auto")
+        self.inputs.parameters["criteria_metrics"] = InputParameter(type=str, value="rmse_f")
         self.inputs.artifacts["candidate_systems"] = InputArtifact()
         self.inputs.artifacts["current_systems"] = InputArtifact()
         self.inputs.artifacts["valid_systems"] = InputArtifact()
@@ -64,7 +66,8 @@ class ActiveLearning(Steps):
                         "ratio_selected": self.inputs.parameters["ratio_selected"],
                         "train_params": self.inputs.parameters["train_params"],
                         "batch_size": self.inputs.parameters["batch_size"],
-                        "optional_args": select_optional_args or {}},
+                        "optional_args": select_optional_args or {},
+                        "criteria_metrics": self.inputs.parameters["criteria_metrics"]},
             artifacts={"current_systems": self.inputs.artifacts["current_systems"],
                        "candidate_systems": self.inputs.artifacts["candidate_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -86,7 +89,8 @@ class ActiveLearning(Steps):
                         "learning_curve": select_step.outputs.parameters["learning_curve"],
                         "select_type": self.inputs.parameters["select_type"],
                         "ratio_selected": self.inputs.parameters["ratio_selected"],
-                        "batch_size": self.inputs.parameters["batch_size"]},
+                        "batch_size": self.inputs.parameters["batch_size"],
+                        "criteria_metrics": self.inputs.parameters["criteria_metrics"]},
             artifacts={"candidate_systems": select_step.outputs.artifacts["remaining_systems"],
                        "current_systems": select_step.outputs.artifacts["current_systems"],
                        "valid_systems": self.inputs.artifacts["valid_systems"],
@@ -118,8 +122,8 @@ def get_artifact(urn, name="data", detect_systems=False):
         return None
     elif isinstance(urn, str) and urn.startswith("oss://"):
         return S3Artifact(key=urn[6:])
-    elif isinstance(urn, str) and urn.startswith("launching+datasets://"):
-        return DatasetsArtifact.from_urn(urn)
+    elif isinstance(urn, str) and urn.startswith("datasets://"):
+        return BohriumDatasetsArtifact(urn[11:])
     else:
         if detect_systems:
             path = []
@@ -157,7 +161,7 @@ def build_train_only_workflow(config):
             dataset[i] = path_list
     dataset_artifact = get_artifact(dataset, "dataset")
     pretrained_model = config.get("pretrained_model", config.get("finetune_model"))
-    pretrained_model_artifact = get_artifact(pretrained_model, "finetune model")
+    pretrained_model_artifact = get_artifact(pretrained_model, "pretrained model")
     valid_data = config["valid_data"]
     valid_data_artifact = get_artifact(valid_data, "validation data", True)
     old_data = config.get("old_data", None)
@@ -182,7 +186,11 @@ def build_train_only_workflow(config):
     train_executor = train.get("executor")
     if train_executor is not None:
         train_executor = DispatcherExecutor(**train_executor)
-    train_params = train["params"]
+    if "script" in train:
+        with open(train["script"], "r") as f:
+            train_params = json.load(f)
+    else:
+        train_params = train["params"]
     finetune_args = train.get("finetune_args", "")
     train_optional_args = train.get("optional_args", {})
 
@@ -343,6 +351,7 @@ def build_active_learning_workflow(config):
     dataset = config["dataset"]
     ratio_init = config.get("ratio_init", None)
     select_type = config.get("select_type", "global")
+    criteria_metrics = config.get("criterial_metrics", "rmse_f")
     valid_data = config["valid_data"]
     pretrained_model = config.get("pretrained_model", config.get("pretrained_model"))
     resume = config.get("resume", False)
@@ -377,7 +386,11 @@ def build_active_learning_workflow(config):
     train_executor = train.get("executor")
     if train_executor is not None:
         train_executor = DispatcherExecutor(**train_executor)
-    train_params = train["params"]
+    if "script" in train:
+        with open(train["script"], "r") as f:
+            train_params = json.load(f)
+    else:
+        train_params = train["params"]
     resume_train_params = None
     resume_params = train.get("resume_params", None) if resume else None
     if resume_params is not None:
@@ -389,7 +402,7 @@ def build_active_learning_workflow(config):
     wf = Workflow(wf_name, parameters={"input": config})
     dataset_artifact = get_artifact(dataset, "dataset", True)
 
-    pretrained_model_artifact = get_artifact(pretrained_model, "finetune model")
+    pretrained_model_artifact = get_artifact(pretrained_model, "pretrained model")
     valid_data_artifact = get_artifact(valid_data, "validation data", True)
     parallel_steps = []
     train_all = len(ratio_selected) > 0 and ratio_selected[-1] == 1.0 and not resume
@@ -492,10 +505,9 @@ def build_active_learning_workflow(config):
         )
         return train_step, valid_step
 
-
     merge = config.get("merge", {})
     merge_image = merge.get("image", "dptechnology/dpdata")
-    
+
     active_learning_steps = Steps("active-learning")
     active_learning = ActiveLearning(
         select_op, train_op, select_image, train_image,
@@ -521,6 +533,7 @@ def build_active_learning_workflow(config):
             parameters={"train_params": train_params,
                         "learning_curve": {},
                         "select_type": select_type,
+                        "criteria_metrics": criteria_metrics,
                         "ratio_selected": ratio_selected,
                         "batch_size": batch_size},
             artifacts={"current_systems": split_step.outputs.artifacts["init_systems"],

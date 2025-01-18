@@ -32,12 +32,21 @@ class DPValidate(Validate):
         ret = os.system(cmd)
         assert ret == 0, "Command '%s' failed" % cmd
 
-        rmse_f = []
-        rmse_e = []
-        rmse_v = []
-        natoms = []
-        e = np.loadtxt("result.e.out")
-        f = np.loadtxt("result.f.out")
+        metrics = {
+            "mae_e": [],
+            "rmse_e": [],
+            "mae_epa": [],
+            "rmse_epa": [],
+            "mae_f": [],
+            "rmse_f": [],
+            "mae_v": [],
+            "rmse_v": [],
+            "mae_vpa": [],
+            "rmse_vpa": [],
+            "natoms": [],
+        }
+        e = np.loadtxt("result.e.out") if os.path.exists("result.e.out") else None
+        f = np.loadtxt("result.f.out") if os.path.exists("result.f.out") else None
         v = np.loadtxt("result.v.out") if os.path.exists("result.v.out") else None
         i_e = 0
         i_f = 0
@@ -51,35 +60,31 @@ class DPValidate(Validate):
                 d.append(k)
 
             for k in d:
-                rmse_f_sys = []
-                rmse_e_sys = []
-                rmse_v_sys = []
-                natoms_sys = []
+                metrics_sys = {key: [] for key in metrics}
                 for i in range(len(k)):
-                    force0 = k[i].data["forces"][0]
-                    energy0 = k[i].data["energies"][0]
-                    virial0 = k[i].data["virials"][0] if "virials" in k[i].data else None
-                    n = force0.shape[0]
+                    n = k.get_natoms()
 
-                    err_e = abs(e[i_e][0] - e[i_e][1]) / n
-                    err_f = np.sqrt(np.average((f[i_f:i_f+n, 0:3] - f[i_f:i_f+n, 3:6])**2))
-                    err_v = None
-                    if virial0 is not None:
-                        err_v = np.sqrt(np.average((v[i_e, 0:9].reshape([3, 3]) - v[i_e, 9:18].reshape([3, 3]))**2)) / n
+                    if "energies" in k.data:
+                        metrics_sys["mae_e"].append(np.mean(np.abs(e[i_e][0] - e[i_e][1])))
+                        metrics_sys["rmse_e"].append(np.sqrt(np.mean((e[i_e][0] - e[i_e][1])**2)))
+                        metrics_sys["mae_epa"].append(np.mean(np.abs(e[i_e][0] - e[i_e][1])) / n)
+                        metrics_sys["rmse_epa"].append(np.sqrt(np.mean((e[i_e][0] - e[i_e][1])**2)) / n)
+                    if "forces" in k.data:
+                        metrics_sys["mae_f"].append(np.mean(np.abs(f[i_f:i_f+n, 0:3] - f[i_f:i_f+n, 3:6])))
+                        metrics_sys["rmse_f"].append(np.sqrt(np.mean((f[i_f:i_f+n, 0:3] - f[i_f:i_f+n, 3:6])**2)))
+                    if "virials" in k.data:
+                        metrics_sys["mae_v"].append(np.mean(np.abs(v[i_e, 0:9] - v[i_e, 9:18])))
+                        metrics_sys["rmse_v"].append(np.sqrt(np.mean((v[i_e, 0:9] - v[i_e, 9:18])**2)))
+                        metrics_sys["mae_vpa"].append(np.mean(np.abs(v[i_e, 0:9] - v[i_e, 9:18])) / n)
+                        metrics_sys["rmse_vpa"].append(np.sqrt(np.mean((v[i_e, 0:9] - v[i_e, 9:18])**2)) / n)
+                    metrics_sys["natoms"].append(n)
                     i_e += 1
                     i_f += n
-                    print("System: %s frame: %s rmse_e: %s rmse_f: %s rmse_v: %s" % (sys, i, err_e, err_f, err_v))
-                    rmse_f_sys.append(err_f)
-                    rmse_e_sys.append(err_e)
-                    if err_v is not None:
-                        rmse_v_sys.append(err_v)
-                    natoms_sys.append(n)
-                rmse_f.append(rmse_f_sys)
-                rmse_e.append(rmse_e_sys)
-                if len(rmse_v_sys) > 0:
-                    rmse_v.append(rmse_v_sys)
-                natoms.append(natoms_sys)
-        return rmse_f, rmse_e, rmse_v if len(rmse_v) > 0 else None, natoms
+                print("System: %s metrics: %s" % (sys, metrics_sys))
+                for key in metrics:
+                    if len(metrics_sys[key]) > 0:
+                        metrics[key].append(metrics_sys[key])
+        return {key: np.array(value) for key, value in metrics.items() if len(value) > 0}
 
 
 class DPSelectSamples(SelectSamples, DPValidate):

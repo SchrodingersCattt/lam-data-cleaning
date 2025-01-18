@@ -73,4 +73,8 @@ class NequipValidate(Validate):
                 rmse_e.append(rmse_e_sys)
                 natoms.append(natoms_sys)
                 i += 1
-        return rmse_f, rmse_e, None, natoms
+        return {
+            "rmse_epa": rmse_e,
+            "rmse_f": rmse_f,
+            "natoms": natoms,
+        }

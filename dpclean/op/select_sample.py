@@ -43,10 +43,19 @@ class Validate(OP, ABC):
         pass
 
     def validate(self, systems, train_params, batch_size, optional_args=None):
-        rmse_f = []
-        rmse_e = []
-        rmse_v = []
-        natoms = []
+        metrics = {
+            "mae_e": [],
+            "rmse_e": [],
+            "mae_epa": [],
+            "rmse_epa": [],
+            "mae_f": [],
+            "rmse_f": [],
+            "mae_v": [],
+            "rmse_v": [],
+            "mae_vpa": [],
+            "rmse_vpa": [],
+            "natoms": [],
+        }
         for sys in systems:
             mixed_type = len(list(sys.glob("*/real_atom_types.npy"))) > 0
             d = dpdata.MultiSystems()
@@ -56,54 +65,58 @@ class Validate(OP, ABC):
                 k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
                 d.append(k)
             for k in d:
-                rmse_f_sys = []
-                rmse_e_sys = []
-                rmse_v_sys = []
-                natoms_sys = []
+                metrics_sys = {key: [] for key in metrics}
                 for i in range(len(k)):
-                    cell = k[i].data["cells"][0]
-                    if k[i].nopbc:
+                    cell = k.data["cells"][i]
+                    if k.nopbc:
                         cell = None
-                    coord = k[i].data["coords"][0]
-                    force0 = k[i].data["forces"][0]
-                    energy0 = k[i].data["energies"][0]
-                    virial0 = k[i].data["virials"][0] if "virials" in k[i].data else None
-                    ori_atype = k[i].data["atom_types"]
-                    anames = k[i].data["atom_names"]
+                    coord = k.data["coords"][i]
+                    energy0 = k.data["energies"][i] if "energies" in k.data else None
+                    force0 = k.data["forces"][i] if "forces" in k.data else None
+                    virial0 = k.data["virials"][i] if "virials" in k.data else None
+                    ori_atype = k.data["atom_types"]
+                    anames = k.data["atom_names"]
                     atype = np.array([train_params["model"]["type_map"].index(anames[j]) for j in ori_atype])
+                    n = k.get_natoms()
                     e, f, v = self.evaluate(coord, cell, atype)
 
-                    lx = 0
-                    for j in range(force0.shape[0]):
-                        lx += (force0[j][0] - f[j][0]) ** 2 + \
-                                (force0[j][1] - f[j][1]) ** 2 + \
-                                (force0[j][2] - f[j][2]) ** 2
-                    err_f = ( lx / force0.shape[0] / 3 ) ** 0.5
-                    err_e = abs(energy0 - e) / force0.shape[0]
-                    err_v = np.sqrt(np.average((virial0 - v)**2)) / force0.shape[0] if virial0 is not None else None
-                    print("System: %s frame: %s rmse_e: %s rmse_f: %s rmse_v: %s" % (sys, i, err_e, err_f, err_v))
-                    rmse_f_sys.append(err_f)
-                    rmse_e_sys.append(err_e)
-                    if err_v is not None:
-                        rmse_v_sys.append(err_v)
-                    natoms_sys.append(force0.shape[0])
-                rmse_f.append(rmse_f_sys)
-                rmse_e.append(rmse_e_sys)
-                if len(rmse_v_sys) > 0:
-                    rmse_v.append(rmse_v_sys)
-                natoms.append(natoms_sys)
-        return rmse_f, rmse_e, rmse_v if len(rmse_v) > 0 else None, natoms
+                    if energy0 is not None:
+                        metrics_sys["mae_e"].append(np.mean(np.abs(e - energy0)))
+                        metrics_sys["rmse_e"].append(np.sqrt(np.mean((e - energy0)**2)))
+                        metrics_sys["mae_epa"].append(np.mean(np.abs(e - energy0)) / n)
+                        metrics_sys["rmse_epa"].append(np.sqrt(np.mean((e - energy0)**2)) / n)
+                    if force0 is not None:
+                        metrics_sys["mae_f"].append(np.mean(np.abs(f - force0)))
+                        metrics_sys["rmse_f"].append(np.sqrt(np.mean((f - force0)**2)))
+                    if virial0 is not None:
+                        metrics_sys["mae_v"].append(np.mean(np.abs(v - virial0)))
+                        metrics_sys["rmse_v"].append(np.sqrt(np.mean((v - virial0)**2)))
+                        metrics_sys["mae_vpa"].append(np.mean(np.abs(v - virial0)) / n)
+                        metrics_sys["rmse_vpa"].append(np.sqrt(np.mean((v - virial0)**2)) / n)
+                    metrics_sys["natoms"].append(n)
+                print("System: %s metrics: %s" % (sys, metrics_sys))
+                for key in metrics:
+                    if len(metrics_sys[key]) > 0:
+                        metrics[key].append(metrics_sys[key])
+        return {key: np.array(value) for key, value in metrics.items() if len(value) > 0}
 
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
-        na = sum([sum(i) for i in natoms])
-        nf = sum([len(i) for i in natoms])
-        rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
-        rmse_e = np.sqrt(sum([sum([i**2 for i in r]) for r in rmse_e]) / nf)
-        rmse_v = float(np.sqrt(np.average(np.concatenate(rmse_v)**2))) if rmse_v is not None else None
-        results = {"rmse_f": float(rmse_f), "rmse_e": float(rmse_e), "rmse_v": rmse_v}
+        metrics = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
+        metrics = {key: np.concatenate(value) for key, value in metrics.items()}
+        results = {}
+        for key, value in metrics.items():
+            if key == "natoms":
+                continue
+            if key == "mae_f":
+                results[key] = float(np.sum(value*metrics["natoms"])/np.sum(metrics["natoms"]))
+            elif key == "rmse_f":
+                results[key] = float(np.sqrt(np.sum(value**2*metrics["natoms"])/np.sum(metrics["natoms"])))
+            elif key.startswith("mae_"):
+                results[key] = float(np.mean(value))
+            elif key.startswith("rmse_"):
+                results[key] = float(np.sqrt(np.mean(value**2)))
         return OPIO({
             "results": results,
         })
@@ -125,6 +138,7 @@ class SelectSamples(Validate, ABC):
                 "train_params": dict,
                 "batch_size": Parameter(str, default="auto"),
                 "optional_args": Parameter(dict, default={}),
+                "criteria_metrics": Parameter(str, default="rmse_f"),
             }
         )
 
@@ -143,26 +157,28 @@ class SelectSamples(Validate, ABC):
     @OP.exec_sign_check
     def execute(self, ip: OPIO) -> OPIO:
         self.load_model(ip["model"])
-        rmse_f, rmse_e, rmse_v, natoms = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
-        na = sum([sum(i) for i in natoms])
-        nf = sum([len(i) for i in natoms])
-        rmse_f = np.sqrt(sum([sum([i**2*j for i, j in zip(r, n)]) for r, n in zip(rmse_f, natoms)]) / na)
-        rmse_e = np.sqrt(sum([sum([i**2 for i in r]) for r in rmse_e]) / nf)
-        rmse_v = float(np.sqrt(np.average(np.concatenate(rmse_v)**2))) if rmse_v is not None else None
+        metrics = self.validate(ip["valid_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
+        metrics = {key: np.concatenate(value) for key, value in metrics.items()}
+        lcurve = ip["learning_curve"]
+        for key, value in metrics.items():
+            if key == "natoms":
+                continue
+            lcurve[key] = lcurve.get(key, [])
+            if key == "mae_f":
+                lcurve[key].append(float(np.sum(value*metrics["natoms"])/np.sum(metrics["natoms"])))
+            elif key == "rmse_f":
+                lcurve[key].append(float(np.sqrt(np.sum(value**2*metrics["natoms"])/np.sum(metrics["natoms"]))))
+            elif key.startswith("mae_"):
+                lcurve[key].append(float(np.mean(value)))
+            elif key.startswith("rmse_"):
+                lcurve[key].append(float(np.sqrt(np.mean(value**2))))
+
         n_current = 0
         for sys in ip["current_systems"]:
             k = dpdata.LabeledSystem(sys, fmt="deepmd/npy")
             n_current += len(k)
-        lcurve = ip["learning_curve"]
         lcurve["nsamples"] = lcurve.get("nsamples", [])
         lcurve["nsamples"].append(n_current)
-        lcurve["rmse_f"] = lcurve.get("rmse_f", [])
-        lcurve["rmse_f"].append(float(rmse_f))
-        lcurve["rmse_e"] = lcurve.get("rmse_e", [])
-        lcurve["rmse_e"].append(float(rmse_e))
-        if rmse_v is not None:
-            lcurve["rmse_v"] = lcurve.get("rmse_v", [])
-            lcurve["rmse_v"].append(rmse_v)
 
         ratio_selected = ip["ratio_selected"][ip["iter"]] if ip["iter"] < len(ip["ratio_selected"]) else 0
         if ratio_selected == 0:
@@ -178,8 +194,9 @@ class SelectSamples(Validate, ABC):
                 "learning_curve": lcurve,
             })
 
-        rmse_f, _, _, _ = self.validate(ip["candidate_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
-        nf = sum([len(i) for i in rmse_f])
+        metrics = self.validate(ip["candidate_systems"], ip["train_params"], batch_size=ip["batch_size"], optional_args=ip["optional_args"])
+        criteria = metrics[ip["criteria_metrics"]]
+        nf = sum([len(i) for i in criteria])
         if nf == 0:
             return OPIO({
                 "remaining_systems": [],
@@ -189,25 +206,30 @@ class SelectSamples(Validate, ABC):
                 "learning_curve": lcurve,
             })
 
-        indices = [[] for _ in range(len(rmse_f))]
+        indices = [[] for _ in range(len(criteria))]
         if ip["select_type"] == "global":
-            mapping = sum([[(i, j) for j in range(len(s))] for i, s in enumerate(rmse_f)], [])
-            rmse_f_1d = sum(rmse_f, [])
-            sorted_indices = [int(i) for i in np.argsort(rmse_f_1d)]
+            mapping = sum([[(i, j) for j in range(len(s))] for i, s in enumerate(criteria)], [])
+            criteria_1d = np.concatenate(criteria)
+            sorted_indices = [int(i) for i in np.argsort(criteria_1d)]
             sorted_indices.reverse()
+            print("Sorted criteria metrics: ", criteria_1d[sorted_indices])
             ns = math.floor(len(sorted_indices) * ratio_selected)
             if random.random() < len(sorted_indices) * ratio_selected - ns:
                 ns += 1
+            print("Selected criteria metrics: ", criteria_1d[sorted_indices[:ns]])
             for i in range(ns):
                 indices[mapping[sorted_indices[i]][0]].append(mapping[sorted_indices[i]][1])
         elif ip["select_type"] == "system":
-            for i in range(len(rmse_f)):
-                if len(rmse_f[i]) > 0:
-                    ns = math.floor(len(rmse_f[i]) * ratio_selected)
-                    if random.random() < len(rmse_f[i]) * ratio_selected - ns:
+            for i in range(len(criteria)):
+                print("System: ", i)
+                if len(criteria[i]) > 0:
+                    ns = math.floor(len(criteria[i]) * ratio_selected)
+                    if random.random() < len(criteria[i]) * ratio_selected - ns:
                         ns += 1
-                    sorted_indices = [int(j) for j in np.argsort(rmse_f[i])]
+                    sorted_indices = [int(j) for j in np.argsort(criteria[i])]
                     sorted_indices.reverse()
+                    print("Sorted criteria metrics: ", criteria[i][sorted_indices])
+                    print("Selected criteria metrics: ", criteria[i][sorted_indices[:ns]])
                     for j in range(ns):
                         indices[i].append(sorted_indices[j])
         n_selected = sum([len(i) for i in indices])

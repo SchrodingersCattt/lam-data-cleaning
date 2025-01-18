@@ -98,4 +98,8 @@ class OCPValidate(Validate):
                 rmse_e.append(rmse_e_sys)
                 rmse_f.append(rmse_f_sys)
                 natoms.append(natoms_sys)
-        return rmse_f, rmse_e, None, natoms
+        return {
+            "rmse_epa": rmse_e,
+            "rmse_f": rmse_f,
+            "natoms": natoms,
+        }
